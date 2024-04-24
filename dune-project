@@ -5,22 +5,22 @@
 (generate_opam_files true)
 
 (source
- (github username/reponame))
+ (github bigspeedfpv/okitten))
 
-(authors "Author Name")
+(authors "Andrew Brower <bigspeedfpv@gmail.com>")
 
-(maintainers "Maintainer Name")
+(maintainers "Andrew Brower <bigspeedfpv@gmail.com>")
 
-(license LICENSE)
+(license MIT)
 
 (documentation https://url/to/documentation)
 
 (package
  (name okitten)
- (synopsis "A short synopsis")
- (description "A longer description")
- (depends ocaml dune riot)
+ (synopsis "A Discord API wrapper for OCaml")
+ (description "OKitten is a Discord API wrapper for OCaml ^_^")
+ (depends ocaml dune cohttp cohttp-lwt-unix conduit-lwt dune-build-info fmt ipaddr lwt websocket logs uri yojson ppx_deriving ppx_deriving_yojson)
  (tags
-  (topics "to describe" your project)))
+  (discord bot)))
 
 ; See the complete stanza docs at https://dune.readthedocs.io/en/stable/dune-files.html#dune-project

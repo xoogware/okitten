@@ -1,2 +1,19 @@
 (library
- (name okitten))
+ (name okitten)
+ (libraries
+  cohttp
+  cohttp-lwt-unix
+  conduit-lwt
+  dune-build-info
+  ipaddr.unix
+  logs.lwt
+  lwt
+  ppx_deriving_yojson.runtime
+  uri
+  yojson
+  websocket
+  websocket-lwt-unix)
+ (preprocess
+  (pps ppx_deriving_yojson lwt_ppx)))
+
+(include_subdirs unqualified)

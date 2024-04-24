@@ -1,4 +1,4 @@
 (executable
  (public_name okitten)
  (name main)
- (libraries okitten))
+ (libraries okitten fmt.tty logs lwt lwt.unix logs.fmt))
