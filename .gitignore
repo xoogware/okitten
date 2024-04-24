@@ -1,6 +1,8 @@
 .devenv
 .direnv
 
+.DS_Store
+
 ### OCaml ###
 *.annot
 *.cmo
