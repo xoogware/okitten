@@ -34,7 +34,7 @@ let lwt_reporter () =
 let () =
   let module Bot =
     Client.Make (struct
-      let shards = 5
+      let shards = Some 5
       let token = "pluh"
     end)
   in

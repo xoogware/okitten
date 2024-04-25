@@ -32,7 +32,7 @@
             buildInputs = [ocamlPackages.utop];
             packages = builtins.attrValues {
               inherit (pkgs) clang_17 clang-tools_17 pkg-config;
-              inherit (ocamlPackages) ocaml-lsp ocamlformat ocamlformat-rpc-lib;
+              inherit (ocamlPackages) ocaml-lsp ocamlformat ocamlformat-rpc-lib odoc;
             };
           };
         };

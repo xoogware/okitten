@@ -1,5 +1,5 @@
 (library
- (name okitten)
+ (public_name okitten)
  (libraries
   cohttp
   cohttp-lwt-unix

@@ -1,15 +1,24 @@
 open! Lwt
 
+(** The configuration for an OKitten Client. *)
 module type ClientConfig = sig
-  val shards : int
+  (** The number of shards to create. [None] for auto sharding. *)
+  val shards : int option
+
   val token : string
 end
 
-module Make (C : ClientConfig) = struct
-  let _shards = C.shards
+module type S = sig
+  (** Starts the Client and connects to Discord. *)
+  val start : unit -> unit Lwt.t
+end
+
+module Make (C : ClientConfig) : S = struct
+  let shards = C.shards
 
   let start () =
     Client_options.token := C.token;
-    Logs_lwt.info (fun f -> f "OKitten started :3")
+    ignore @@ Logs_lwt.info (fun f -> f "OKitten started :3");
+    Sharder.start ?count:shards ()
   ;;
 end

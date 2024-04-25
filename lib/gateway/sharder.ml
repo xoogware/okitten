@@ -32,15 +32,21 @@ module Shard = struct
       `Error ("unexpected opcode " ^ op)
   ;;
 
+  let send_json ~content shard =
+    Websocket_lwt_unix.write shard.conn @@ Frame.create ~content ()
+    >>= fun () -> return shard
+  ;;
+
   let push_frame ?payload ~ev shard =
     let content =
       match payload with
       | None -> ""
       | Some p ->
-        Yojson.Safe.to_string @@ `Assoc [ "op", `Int (Events.to_int ev); "d", p ]
+        { op = Events.Opcode.to_int ev; d = p; s = None; t = None }
+        |> Events.frame_to_yojson
+        |> Yojson.Safe.to_string
     in
-    Websocket_lwt_unix.write shard.conn @@ Frame.create ~content ()
-    >>= fun () -> return shard
+    send_json ~content shard
   ;;
 
   let heartbeat shard =
@@ -50,7 +56,13 @@ module Shard = struct
       ignore
       @@ Logs_lwt.debug (fun f ->
         f "Sending Heartbeat - Shard %d (%d), sequence %d" (fst shard.id) (snd shard.id) i);
-      push_frame ~payload:(`Int i) ~ev:Heartbeat shard
+      let open Events.Opcode in
+      let payload =
+        { op = to_int Heartbeat; d = Events.Heartbeat shard.seq; s = None; t = None }
+        |> frame_to_yojson
+        |> Yojson.Safe.to_string
+      in
+      send_json ~content:payload shard
   ;;
 
   let initialize ?data shard =
@@ -68,8 +80,9 @@ module Shard = struct
   ;;
 
   let handle_frame ~frame shard =
+    let open Events.Opcode in
     let module J = Yojson.Safe.Util in
-    let op = J.(member "op" frame |> to_int) |> Events.of_int in
+    let op = J.(member "op" frame |> to_int) |> of_int in
     match op with
     | Dispatch ->
       Logs.debug (fun f -> f "Received dispatch");
@@ -93,7 +106,7 @@ module Shard = struct
       Logs.warn (fun f ->
         f
           "Received invalid opcode (%s) on shard %d (%d)"
-          (Events.to_string opcode)
+          (Events.Opcode.to_string opcode)
           (fst shard.id)
           (snd shard.id));
       return shard
