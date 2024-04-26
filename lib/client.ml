@@ -8,9 +8,11 @@ module type ClientConfig = sig
   val token : string
 end
 
+type t = { sharder : Sharder.t }
+
 module type S = sig
   (** Starts the Client and connects to Discord. *)
-  val start : unit -> unit Lwt.t
+  val start : unit -> t Lwt.t
 end
 
 module Make (C : ClientConfig) : S = struct
@@ -19,6 +21,6 @@ module Make (C : ClientConfig) : S = struct
   let start () =
     Client_options.token := C.token;
     ignore @@ Logs_lwt.info (fun f -> f "OKitten started :3");
-    Sharder.start ?count:shards ()
+    Sharder.start ?count:shards () >|= fun sharder -> { sharder }
   ;;
 end

@@ -1,4 +1,5 @@
 open Okitten
+open Lwt.Infix
 
 let lwt_reporter () =
   let buf_fmt ~like =
@@ -32,14 +33,24 @@ let lwt_reporter () =
 ;;
 
 let () =
+  let token =
+    match Sys.getenv_opt "TOKEN" with
+    | Some t -> t
+    | None -> failwith "TOKEN not found in environment"
+  in
   let module Bot =
     Client.Make (struct
       let shards = Some 5
-      let token = "pluh"
+      let token = token
     end)
   in
   Fmt_tty.setup_std_outputs ?style_renderer:(Some `Ansi_tty) ();
   Logs.set_level @@ Some Logs.Debug;
   Logs.set_reporter @@ lwt_reporter ();
-  Lwt_main.run @@ Bot.start ()
+  let rec loop () = Lwt_unix.sleep 5. >>= fun _ -> loop () in
+  Lwt_main.run
+    (Bot.start ()
+     >>= fun _ ->
+     Logs.info (fun f -> f "Bot started ^_^");
+     loop ())
 ;;

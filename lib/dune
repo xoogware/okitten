@@ -10,6 +10,7 @@
   lwt
   ppx_deriving_yojson.runtime
   uri
+  str
   yojson
   websocket
   websocket-lwt-unix)

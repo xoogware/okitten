@@ -9,7 +9,8 @@ module Shard = struct
     ; seq : int
     ; frame_stream : Frame.t Lwt_stream.t * (Frame.t option -> unit)
     ; conn : Websocket_lwt_unix.conn
-    ; heartbeat_interval : int
+    ; heartbeat_interval : float ref
+    ; session_id : string option
     }
 
   type t =
@@ -18,8 +19,7 @@ module Shard = struct
     ; can_resume : bool
     }
 
-  let identify = Mutex.create ()
-  let _ = Mutex.lock identify
+  let identify = Lwt_mutex.create ()
 
   let parse_frame (frame : Frame.t) =
     let open Frame.Opcode in
@@ -65,18 +65,37 @@ module Shard = struct
       send_json ~content:payload shard
   ;;
 
-  let initialize ?data shard =
+  let identify_or_resume ?data shard =
     let module J = Yojson.Safe.Util in
     let shard =
       match data with
       | Some data ->
-        Ok
-          { shard with
-            heartbeat_interval = J.(member "heartbeat_interval" data |> to_int)
-          }
-      | None -> Error "Failed to establish heartbeat"
+        Logs.info (fun f -> f "hi %s" @@ Yojson.Safe.to_string data);
+        let intv = J.(member "heartbeat_interval" data |> to_int) in
+        shard.heartbeat_interval := float_of_int intv /. 1000.;
+        shard
+      | None -> shard
     in
-    shard
+    let open Events in
+    match shard.session_id with
+    | None ->
+      Lwt_mutex.with_lock identify (fun _ ->
+        Logs.debug (fun f -> f "Identify shard %d (%d)" (fst shard.id) (snd shard.id));
+        let payload =
+          Identify
+            { token = !Client_options.token
+            ; compress = false
+            ; large_threshold = 50
+            ; shard = shard.id
+            ; intents = 0
+            }
+        in
+        push_frame ~payload ~ev:Opcode.Identify shard)
+    | Some id ->
+      let payload =
+        Resume { token = !Client_options.token; session_id = id; seq = shard.seq }
+      in
+      push_frame ~payload ~ev:Opcode.Resume shard
   ;;
 
   let handle_frame ~frame shard =
@@ -97,10 +116,10 @@ module Shard = struct
           (Yojson.Safe.pretty_to_string frame));
       (* if d is true the shard should resume https://discord.com/developers/docs/topics/gateway#resuming *)
       (match J.(member "d" frame |> to_bool) with
-       | true -> return shard
-       | false -> return shard)
+       | true -> identify_or_resume shard
+       | false -> identify_or_resume { shard with session_id = None })
     | Reconnect -> return shard
-    | Hello -> return shard
+    | Hello -> identify_or_resume ~data:(J.member "d" frame) shard
     | HeartbeatAck -> return shard
     | opcode ->
       Logs.warn (fun f ->
@@ -112,8 +131,12 @@ module Shard = struct
       return shard
   ;;
 
-  let create id () =
-    let uri = "wss://gateway.discord.gg/?v=10&encoding=json" |> Uri.of_string in
+  let create ~url id () =
+    let uri =
+      url ^ "?v=10&encoding=json"
+      |> Str.replace_first (Str.regexp "wss") "https"
+      |> Uri.of_string
+    in
     let%lwt addy = Resolver_lwt.resolve_uri ~uri Resolver_lwt_unix.system in
     let ctx = Lazy.force Conduit_lwt_unix.default_ctx in
     let%lwt client = Conduit_lwt_unix.endp_to_client ~ctx addy in
@@ -124,7 +147,8 @@ module Shard = struct
       ; seq = 0
       ; frame_stream = Lwt_stream.create ()
       ; conn
-      ; heartbeat_interval = 0
+      ; heartbeat_interval = ref 0.
+      ; session_id = None
       }
   ;;
 end
@@ -145,13 +169,18 @@ let start ?count () =
     | Some c -> c
     | None -> J.(member "shards" data |> to_int)
   in
-  let shard_list = 0, count in
   let rec listen (t : Shard.t) =
     let handle_frame (t : Shard.t) =
       let%lwt frame = Websocket_lwt_unix.read t.state.conn in
       match Shard.parse_frame frame with
-      | `Ok f ->
-        Shard.handle_frame ~frame:f t.state >>= fun s -> return { t with state = s }
+      | `Ok frame ->
+        Logs.debug (fun f ->
+          f
+            "Shard %d (%d) received frame %s"
+            (fst t.state.id)
+            (snd t.state.id)
+            (Yojson.Safe.to_string frame));
+        Shard.handle_frame ~frame t.state >>= fun s -> return { t with state = s }
       | `Close c ->
         Logs.warn (fun f ->
           f
@@ -160,11 +189,43 @@ let start ?count () =
             (snd t.state.id)
             (Frame.show c));
         return t
+      | `Error e ->
+        Logs.warn (fun f ->
+          f "Websocket error on shard %d (%d): %s" (fst t.state.id) (snd t.state.id) e);
+        return t
     in
     match t.stopped with
     | true -> return ()
     | false -> handle_frame t >>= listen
   in
+  (* TODO: remove this: suppress unused warning temporarily *)
   Logs.info (fun f -> f "Connecting at url %s" url);
-  return ()
+  (* TODO: this is stolen from disml. rewrite to make more sense *)
+  let rec make_shards ids shards =
+    match ids with
+    | id, total when id >= total -> return shards
+    | id, total ->
+      let wrap state = return Shard.{ state; stopped = false; can_resume = true } in
+      let run (shard : Shard.t) =
+        let rec hb_loop () =
+          Logs.debug (fun f ->
+            f
+              "Waiting %f sec to heartbeat on shard %d"
+              !(shard.state.heartbeat_interval)
+              (fst shard.state.id));
+          let%lwt _ = Lwt_unix.sleep !(shard.state.heartbeat_interval) in
+          let%lwt _ = Shard.heartbeat shard.state in
+          hb_loop ()
+        in
+        Lwt.async hb_loop;
+        Lwt.async (fun () -> listen shard);
+        return shard
+      in
+      let make () = Shard.create ids ~url () in
+      make ()
+      >>= wrap
+      >>= run
+      >>= fun shard -> make_shards (id + 1, total) (shard :: shards)
+  in
+  make_shards (0, count) [] >|= fun shards -> { shards }
 ;;

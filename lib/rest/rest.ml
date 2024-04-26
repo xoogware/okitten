@@ -30,7 +30,7 @@ module Client = struct
     let limit =
       match Response.headers res |> Ratelimit.of_headers with
       | Some r -> r
-      | None -> { limit = 1; remaining = 1; reset = 0 }
+      | None -> { limit = 1; remaining = 1; reset = 0. }
     in
     Lwt_mvar.put (Ratelimit.find path !ratelimits) limit
     >>= fun () ->
@@ -74,7 +74,7 @@ module Client = struct
     match limit.remaining with
     | 0 ->
       (* sleep until the reset time has past - floor current time for extra headroom *)
-      let run_after = Float.of_int limit.reset -. Unix.time () in
+      let run_after = limit.reset -. Unix.time () in
       Logs.debug (fun f -> f "RATELIMITED [%s] - running in %f ms" p run_after);
       Lwt_unix.sleep run_after >>= handle
     | _ -> handle ()

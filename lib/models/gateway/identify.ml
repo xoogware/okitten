@@ -1,4 +1,4 @@
-type properties =
+type conn_properties =
   { os : string
   ; browser : string
   ; device : string
@@ -7,7 +7,6 @@ type properties =
 
 type t =
   { token : string
-  ; properties : properties
   ; compress : bool
   ; large_threshold : int
   ; shard : int * int

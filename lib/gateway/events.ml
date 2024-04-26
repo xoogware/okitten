@@ -1,3 +1,6 @@
+(* Yojson uses a rec flag which is apparently not used (???) *)
+[@@@warning "-39"]
+
 type event_payload = .. [@@deriving yojson]
 
 (** Represents a {{:https://discord.com/developers/docs/topics/gateway#gateway-events-example-gateway-event} Frame} sent over the Receive. *)
@@ -90,4 +93,7 @@ module ReceiveEvent = struct
   ;;
 end
 
-type event_payload += Heartbeat of int [@@deriving yojson]
+open Models.Gateway
+
+type event_payload += Heartbeat of int | Identify of Identify.t | Resume of Resume.t
+  [@@deriving yojson]
