@@ -11,5 +11,6 @@ type t =
   ; large_threshold : int
   ; shard : int * int
   ; intents : int
+  ; properties : conn_properties
   }
 [@@deriving yojson]

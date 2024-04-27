@@ -40,7 +40,7 @@ let () =
   in
   let module Bot =
     Client.Make (struct
-      let shards = Some 5
+      let shards = Some 1
       let token = token
     end)
   in

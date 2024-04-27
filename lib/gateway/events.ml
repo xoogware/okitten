@@ -1,16 +1,10 @@
-(* Yojson uses a rec flag which is apparently not used (???) *)
-[@@@warning "-39"]
-
-type event_payload = .. [@@deriving yojson]
-
 (** Represents a {{:https://discord.com/developers/docs/topics/gateway#gateway-events-example-gateway-event} Frame} sent over the Receive. *)
-type frame =
+type 'a frame =
   { op : int
-  ; d : event_payload
+  ; d : 'a
   ; s : int option
   ; t : string option
   }
-[@@deriving yojson]
 
 module Opcode = struct
   type t =
@@ -69,31 +63,3 @@ module Opcode = struct
     | HeartbeatAck -> "HEARTBEAT_ACK"
   ;;
 end
-
-module ReceiveEvent = struct
-  type t =
-    | Dispatch of int
-    | Heartbeat of int
-    | Reconnect
-    | InvalidSession of bool (** [true] if the session can be resumed. *)
-    | Hello of int
-    | HeartbeatAck
-
-  (** Builds a {!ReceiveEvent.t} from a {!frame}.
-      @raise Invalid_argument if the opcode is not valid for a Receive Event. *)
-  let of_frame f =
-    match Opcode.of_int f.op with
-    | Opcode.Dispatch -> Dispatch 0
-    | Opcode.Heartbeat -> Heartbeat 0
-    | Opcode.Reconnect -> Reconnect
-    | Opcode.InvalidSession -> InvalidSession true
-    | Opcode.Hello -> Hello 0
-    | Opcode.HeartbeatAck -> HeartbeatAck
-    | _ -> raise (Invalid_argument "Invalid Opcode received")
-  ;;
-end
-
-open Models.Gateway
-
-type event_payload += Heartbeat of int | Identify of Identify.t | Resume of Resume.t
-  [@@deriving yojson]

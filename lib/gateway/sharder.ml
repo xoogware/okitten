@@ -1,5 +1,4 @@
 open Lwt
-open Events
 open Websocket
 
 module Shard = struct
@@ -33,8 +32,8 @@ module Shard = struct
   ;;
 
   let send_json ~content shard =
-    Websocket_lwt_unix.write shard.conn @@ Frame.create ~content ()
-    >>= fun () -> return shard
+    let%lwt _ = Websocket_lwt_unix.write shard.conn @@ Frame.create ~content () in
+    return shard
   ;;
 
   let push_frame ?payload ~ev shard =
@@ -42,10 +41,9 @@ module Shard = struct
       match payload with
       | None -> ""
       | Some p ->
-        { op = Events.Opcode.to_int ev; d = p; s = None; t = None }
-        |> Events.frame_to_yojson
-        |> Yojson.Safe.to_string
+        `Assoc [ "op", `Int (Events.Opcode.to_int ev); "d", p ] |> Yojson.Safe.to_string
     in
+    Logs.debug (fun f -> f "Sending frame %s" content);
     send_json ~content shard
   ;;
 
@@ -58,8 +56,7 @@ module Shard = struct
         f "Sending Heartbeat - Shard %d (%d), sequence %d" (fst shard.id) (snd shard.id) i);
       let open Events.Opcode in
       let payload =
-        { op = to_int Heartbeat; d = Events.Heartbeat shard.seq; s = None; t = None }
-        |> frame_to_yojson
+        `Assoc [ "op", `Int (to_int Heartbeat); "d", `Int shard.seq ]
         |> Yojson.Safe.to_string
       in
       send_json ~content:payload shard
@@ -82,18 +79,20 @@ module Shard = struct
       Lwt_mutex.with_lock identify (fun _ ->
         Logs.debug (fun f -> f "Identify shard %d (%d)" (fst shard.id) (snd shard.id));
         let payload =
-          Identify
-            { token = !Client_options.token
-            ; compress = false
-            ; large_threshold = 50
-            ; shard = shard.id
-            ; intents = 0
-            }
+          { token = !Client_options.token
+          ; compress = false
+          ; large_threshold = 50
+          ; shard = shard.id
+          ; intents = 0
+          ; properties = { os = "linux"; browser = "okitten"; device = "okitten" }
+          }
+          |> Identify.to_yojson
         in
         push_frame ~payload ~ev:Opcode.Identify shard)
     | Some id ->
       let payload =
-        Resume { token = !Client_options.token; session_id = id; seq = shard.seq }
+        { token = !Client_options.token; session_id = id; seq = shard.seq }
+        |> Resume.to_yojson
       in
       push_frame ~payload ~ev:Opcode.Resume shard
   ;;
