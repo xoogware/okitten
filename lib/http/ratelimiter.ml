@@ -62,13 +62,13 @@ end
 type ratelimit_info =
   { limit : int
   ; timeout_after : float
-  ; http_method : Http.http_method
+  ; http_method : Cohttp.Code.meth
   ; path : string
   ; global : bool
   }
 
-type request = Cohttp.Code.meth * string * Cohttp.Header.t * Cohttp_lwt.Body.t option
-type request_queue_item = request * (Cohttp_lwt.Response.t * Cohttp_lwt.Body.t) Lwt_mvar.t
+type response = Cohttp_lwt.Response.t * Cohttp_lwt.Body.t
+type request_queue_item = Request.t * response Lwt_mvar.t
 
 type t =
   { routes : Ratelimit.t RouteMap.t
@@ -79,7 +79,7 @@ type t =
   ; use_absolute_ratelimits : bool
   }
 
-let init token =
+let init ~token =
   let request_queue, push = Lwt_stream.create () in
   { routes = RouteMap.empty
   ; request_queue
@@ -90,8 +90,8 @@ let init token =
   }
 ;;
 
-let set_callback self callback = { self with callback }
-let use_absolute_ratelimits self r = { self with use_absolute_ratelimits = r }
+let set_callback callback self = { self with callback }
+let use_absolute_ratelimits r self = { self with use_absolute_ratelimits = r }
 
 let get_or_default route ratelimits =
   match RouteMap.find_opt route ratelimits with
@@ -114,23 +114,39 @@ let apply_postprocess ~headers ~resource rl =
 ;;
 
 let rec watch_requests ratelimiter =
-  let open Ratelimit in
   let perform ~meth ~resource ~headers ~body self =
     let uri = Uri.of_string resource in
+    let body = Option.map (fun b -> Cohttp_lwt.Body.of_string b) body in
+    let headers = headers |> Utils.unwrap_or ~default:(Cohttp.Header.init ()) in
+    let headers =
+      Cohttp.Header.add_list
+        headers
+        [ "Authorization", self.token
+        ; "User-Agent", "Discordbot (https://github.com/xoogware/okitten, 0.1)"
+        ]
+    in
     let%lwt response, body = Cohttp_lwt_unix.Client.call ~headers ?body meth uri in
     return (response, body, self)
   in
   match%lwt Lwt_stream.get ratelimiter.request_queue with
-  | Some (request, response_channel) ->
-    let meth, resource, headers, body = request in
-    let%lwt ratelimiter = apply_preprocess ~resource ratelimiter in
+  | Some (r, response_channel) ->
+    let%lwt ratelimiter = apply_preprocess ~resource:r.route ratelimiter in
     let%lwt response, body, ratelimiter =
-      perform ~meth ~resource ~headers ~body ratelimiter
+      perform
+        ~meth:(Request.get_method r)
+        ~resource:r.route
+        ~headers:r.headers
+        ~body:r.body
+        ratelimiter
     in
-    let ratelimiter = apply_postprocess ~headers ~resource ratelimiter in
+    let ratelimiter =
+      apply_postprocess ~headers:response.headers ~resource:r.route ratelimiter
+    in
     let%lwt _ = Lwt_mvar.put response_channel (response, body) in
     watch_requests ratelimiter
   | None ->
     let%lwt _ = Lwt_unix.sleep 0.1 in
     watch_requests ratelimiter
 ;;
+
+let enqueue ~request ~response rl = rl.push @@ Some (request, response)
