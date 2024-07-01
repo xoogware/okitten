@@ -1,4 +1,6 @@
 (executable
  (public_name okitten)
  (name main)
- (libraries okitten fmt.tty logs lwt lwt.unix logs.fmt))
+ (libraries okitten fmt.tty logs lwt lwt.unix logs.fmt)
+ (preprocess
+  (pps lwt_ppx)))

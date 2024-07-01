@@ -1,9 +1,11 @@
 open Lwt
 
 type t =
-  { application_id : string option
+  { _application_id : string option
   ; ratelimiter : Ratelimiter.t
   }
+
+let listen http = Ratelimiter.watch_requests http.ratelimiter
 
 module Builder = struct
   type builder =
@@ -11,18 +13,32 @@ module Builder = struct
     ; token : string
     }
 
-  let create ~token = { application_id = None; token }
+  let parse_token t =
+    try
+      match String.sub t 0 4 with
+      | "Bot " -> t
+      | _ -> "Bot " ^ t
+    with
+    | _ -> t
+  ;;
+
+  let create ~token = { application_id = None; token = parse_token token }
   let set_application_id id b = { b with application_id = Some id }
-  let set_token token b = { b with token }
+  let set_token token b = { b with token = parse_token token }
 
   let build b =
-    { application_id = b.application_id; ratelimiter = Ratelimiter.init ~token:b.token }
+    let http =
+      { _application_id = b.application_id
+      ; ratelimiter = Ratelimiter.init ~token:b.token
+      }
+    in
+    Lwt.async (fun () -> listen http);
+    http
   ;;
 end
 
 let fire request ~http =
   let response = Lwt_mvar.create_empty () in
-  Logs.debug (fun m -> m "%s" @@ Utils.unwrap_or ~default:"hi" http.application_id);
   Ratelimiter.enqueue ~request ~response http.ratelimiter;
   Lwt_mvar.take response
 ;;

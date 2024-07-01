@@ -130,6 +130,7 @@ let rec watch_requests ratelimiter =
     let%lwt response, body = Cohttp_lwt_unix.Client.call ~headers ?body meth uri in
     return (response, body, self)
   in
+  Logs.info (fun m -> m "listening");
   match%lwt Lwt_stream.get ratelimiter.request_queue with
   | Some (r, response_channel) ->
     let%lwt ratelimiter = apply_preprocess ~req:r ratelimiter in

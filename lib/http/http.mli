@@ -12,4 +12,5 @@ module Builder : sig
   val build : builder -> t
 end
 
+val listen : t -> unit Lwt.t
 val get_bot_gateway : t -> (Models.Gateway.bot_gateway, string) result Lwt.t
