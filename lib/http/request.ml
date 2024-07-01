@@ -13,7 +13,7 @@ type t =
   ; route : string
   }
 
-let init route meth = { body = None; headers = None; meth; params = None; route }
+let make ~route ~meth = { body = None; headers = None; meth; params = None; route }
 let body body r = { r with body }
 let headers headers r = { r with headers }
 let params params r = { r with params }

@@ -22,7 +22,7 @@ val set_callback : (ratelimit_info -> unit) -> t -> t
 (** Whether to use absolute ratelimits.
     If true, ratelimit expiry is taken from X-RateLimit-Reset.
     Otherwise, it's calculated using system time plus X-RateLimit-Reset-After. *)
-val use_absolute_ratelimits : bool -> t -> t
+(*val use_absolute_ratelimits : bool -> t -> t*)
 
 (** Begins the ratelimiter event loop. *)
 val watch_requests : t -> unit Lwt.t

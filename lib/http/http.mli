@@ -1,8 +1,4 @@
-type t =
-  { application_id : string option
-  ; ratelimiter : Ratelimiter.t
-  ; token : string
-  }
+type t
 
 module Builder : sig
   type builder =
@@ -15,3 +11,5 @@ module Builder : sig
   val set_token : string -> builder -> builder
   val build : builder -> t
 end
+
+val get_bot_gateway : t -> (Models.Gateway.bot_gateway, string) result Lwt.t

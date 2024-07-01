@@ -1,6 +1,14 @@
 open Lwt
 module RouteMap = Map.Make (String)
 
+type ratelimit_info =
+  { limit : int
+  ; timeout_after : float
+  ; http_method : Cohttp.Code.meth
+  ; path : string
+  ; global : bool
+  }
+
 module Ratelimit = struct
   type t =
     { limit : int
@@ -9,7 +17,7 @@ module Ratelimit = struct
     ; reset_after : float option
     }
 
-  let preprocess_hook ~resource rl =
+  let preprocess_hook ~req ~cb rl =
     match rl.limit with
     | 0 -> return rl
     | limit ->
@@ -23,11 +31,19 @@ module Ratelimit = struct
           | delay ->
             (match rl.remaining with
              | 0 ->
+               let open Request in
                Logs.debug (fun m ->
                  m
                    "Ratelimit reached on %s, preemptively blocking for %fms."
-                   resource
+                   req.route
                    delay);
+               cb
+                 { limit = rl.limit
+                 ; timeout_after = delay
+                 ; http_method = get_method req
+                 ; path = req.route
+                 ; global = false
+                 };
                let%lwt _ = Lwt_unix.sleep (delay /. 1000.) in
                return rl
              | _ -> return { rl with remaining = rl.remaining - 1 })))
@@ -59,14 +75,6 @@ module Ratelimit = struct
   ;;
 end
 
-type ratelimit_info =
-  { limit : int
-  ; timeout_after : float
-  ; http_method : Cohttp.Code.meth
-  ; path : string
-  ; global : bool
-  }
-
 type response = Cohttp_lwt.Response.t * Cohttp_lwt.Body.t
 type request_queue_item = Request.t * response Lwt_mvar.t
 
@@ -76,22 +84,14 @@ type t =
   ; push : request_queue_item option -> unit
   ; token : string
   ; callback : ratelimit_info -> unit
-  ; use_absolute_ratelimits : bool
   }
 
 let init ~token =
   let request_queue, push = Lwt_stream.create () in
-  { routes = RouteMap.empty
-  ; request_queue
-  ; push
-  ; token
-  ; callback = (fun _ -> ())
-  ; use_absolute_ratelimits = false
-  }
+  { routes = RouteMap.empty; request_queue; push; token; callback = (fun _ -> ()) }
 ;;
 
 let set_callback callback self = { self with callback }
-let use_absolute_ratelimits r self = { self with use_absolute_ratelimits = r }
 
 let get_or_default route ratelimits =
   match RouteMap.find_opt route ratelimits with
@@ -99,11 +99,13 @@ let get_or_default route ratelimits =
   | None -> Ratelimit.{ limit = 0; remaining = 0; reset_at = None; reset_after = None }
 ;;
 
-let apply_preprocess ~resource rl =
+let apply_preprocess ~req rl =
   let%lwt route =
-    rl.routes |> get_or_default resource |> Ratelimit.preprocess_hook ~resource
+    rl.routes
+    |> get_or_default req.route
+    |> Ratelimit.preprocess_hook ~req ~cb:rl.callback
   in
-  return { rl with routes = RouteMap.update resource (fun _ -> Some route) rl.routes }
+  return { rl with routes = RouteMap.update req.route (fun _ -> Some route) rl.routes }
 ;;
 
 let apply_postprocess ~headers ~resource rl =
@@ -130,7 +132,7 @@ let rec watch_requests ratelimiter =
   in
   match%lwt Lwt_stream.get ratelimiter.request_queue with
   | Some (r, response_channel) ->
-    let%lwt ratelimiter = apply_preprocess ~resource:r.route ratelimiter in
+    let%lwt ratelimiter = apply_preprocess ~req:r ratelimiter in
     let%lwt response, body, ratelimiter =
       perform
         ~meth:(Request.get_method r)

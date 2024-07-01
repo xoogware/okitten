@@ -15,7 +15,7 @@ type t =
   }
 
 (** Creates a {!Request.t} with the given route and method. *)
-val init : string -> meth -> t
+val make : route:string -> meth:meth -> t
 
 (** Sets the body of a {!Request.t}. *)
 val body : string option -> t -> t
