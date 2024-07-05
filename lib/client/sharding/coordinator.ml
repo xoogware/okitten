@@ -2,7 +2,6 @@ open Lwt
 open Utils
 open Commands.Coordinator
 
-(** Represents a {!Shard} spawned by the Coordinator. ID * Push * Is Identified? *)
 type tracked_shard = int * (Commands.Shard.command option -> unit) * bool
 
 type t =
@@ -19,7 +18,7 @@ let init ~token =
   { cmd_stream; push_cmd; last_identify = None; token; shards = [] }
 ;;
 
-let spawn ~token ~shards ~shard_count ~push_to_coordinator =
+let spawn ~token ~shards ~shard_count ~ws_url ~push_to_coordinator =
   let rec find_start_index max = function
     | (id, _, _) :: xs when id > max -> find_start_index id xs
     | _ :: xs -> find_start_index max xs
@@ -31,7 +30,13 @@ let spawn ~token ~shards ~shard_count ~push_to_coordinator =
     | cnt ->
       let chan, push = Lwt_stream.create () in
       let shard =
-        Shard.init ~id:next_shard_id ~token ~intents:0 ~cmd:chan ~push_to_coordinator
+        Shard.init
+          ~id:next_shard_id
+          ~token
+          ~intents:0
+          ~cmd:chan
+          ~ws_url
+          ~push_to_coordinator
       in
       Lwt.async (fun () -> Shard.start shard);
       spawn' ((next_shard_id, push, false) :: spawned_shards) (cnt - 1) (next_shard_id + 1)
@@ -70,17 +75,17 @@ let run t =
       run' t
     | [ cmd ] ->
       (match cmd with
-       | Spawn (shard_count, res_pipe) ->
+       | Spawn (shard_count, ws_url, res_pipe) ->
          Logs.debug (fun m -> m "Received request to spawn %d shards" shard_count);
          let shards =
            spawn
              ~token:t.token
              ~shards:t.shards
              ~shard_count
+             ~ws_url
              ~push_to_coordinator:t.push_cmd
          in
          let%lwt _ = Lwt_mvar.put res_pipe Ok in
-         Logs.debug (fun m -> m "hi");
          run' { t with shards }
        | Shutdown shard_id ->
          let _, push, _ = t.shards |> List.find (fun (id, _, _) -> id = shard_id) in
@@ -90,7 +95,9 @@ let run t =
        | ShutdownAll ->
          Logs.debug (fun m -> m "Received shutdown for all shards");
          return ())
-    | _ -> failwith "unreachable"
+    | _ ->
+      (* get_available_up_to limits this to a list of up to 1 element, but the type system doesn't know that so we need to have an arm for this *)
+      failwith "unreachable"
   in
   Lwt.async (fun () -> run' t);
   t.push_cmd

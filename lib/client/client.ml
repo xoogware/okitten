@@ -25,26 +25,26 @@ module ClientBuilder = struct
 end
 
 let start ?shards c =
-  let initialize_shards _start_shard total_shards c =
+  let initialize_shards ~count ~ws_url c =
     let res_pipe = Lwt_mvar.create_empty () in
-    c.push_coordinator_cmd (Some (Spawn (total_shards, res_pipe)));
+    c.push_coordinator_cmd (Some (Spawn (count, ws_url, res_pipe)));
     let%lwt _ = Lwt_mvar.take res_pipe in
     return c
+  in
+  Logs.debug (fun m -> m "Fetching Gateway info");
+  let%lwt g =
+    match%lwt Http.get_bot_gateway c.http with
+    | Ok g -> return g
+    | Error e -> failwith e
   in
   match shards with
   | None ->
     Logs.info (fun m -> m "Shard parameter not passed; starting one shard.");
-    return @@ Ok (initialize_shards 0 1 c)
+    return @@ Ok (initialize_shards ~count:1 ~ws_url:g.url c)
   | Some `Autosharded ->
-    Logs.info (fun m -> m "Autosharding.");
-    (match%lwt Http.get_bot_gateway c.http with
-     | Ok g ->
-       Logs.info (fun m -> m "Using %d shards." g.shards);
-       return @@ Ok (initialize_shards 0 g.shards c)
-     | Error e ->
-       Logs.err (fun m -> m "Failed to fetch gateway info: %s. stopping" e);
-       return @@ Error e)
+    Logs.info (fun m -> m "Autosharding; using %d shards." g.shards);
+    return @@ Ok (initialize_shards ~count:g.shards ~ws_url:g.url c)
   | Some (`Manual shards) ->
     Logs.info (fun m -> m "Using %d shards." shards);
-    return @@ Ok (initialize_shards 0 shards c)
+    return @@ Ok (initialize_shards ~count:shards ~ws_url:g.url c)
 ;;
