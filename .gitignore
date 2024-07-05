@@ -1,7 +1,7 @@
 .devenv
 .direnv
 
-.DS_Store
+./**/.DS_Store
 
 ### OCaml ###
 *.annot
