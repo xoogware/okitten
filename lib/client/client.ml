@@ -25,6 +25,7 @@ module ClientBuilder = struct
 end
 
 let start ?shards c =
+  Logs.info (fun m -> m "Running OKitten v%s." @@ Version.get ());
   let initialize_shards ~count ~ws_url c =
     let res_pipe = Lwt_mvar.create_empty () in
     c.push_coordinator_cmd (Some (Spawn (count, ws_url, res_pipe)));

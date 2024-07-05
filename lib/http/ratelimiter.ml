@@ -125,7 +125,8 @@ let rec watch_requests ratelimiter =
       Cohttp.Header.add_list
         headers
         [ "Authorization", self.token
-        ; "User-Agent", "Discordbot (https://github.com/xoogware/okitten, 0.1)"
+        ; ( "User-Agent"
+          , "Discordbot (https://github.com/xoogware/okitten, " ^ Version.get () ^ ")" )
         ]
     in
     let%lwt response, body = Cohttp_lwt_unix.Client.call ~headers ?body meth uri in
