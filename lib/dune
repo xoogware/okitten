@@ -8,6 +8,7 @@
   ipaddr.unix
   logs.lwt
   lwt
+  lwt.unix
   ppx_deriving_yojson.runtime
   uri
   str

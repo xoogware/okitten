@@ -12,4 +12,5 @@ module Shard = struct
   type command =
     | Identify of int (** Total shards to identify out of *)
     | Shutdown
+    | Handle of Websocket.Frame.t
 end

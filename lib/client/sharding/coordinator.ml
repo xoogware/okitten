@@ -34,6 +34,7 @@ let spawn ~token ~shards ~shard_count ~ws_url ~push_to_coordinator =
           ~id:next_shard_id
           ~token
           ~intents:0
+          ~push_cmd:push
           ~cmd:chan
           ~push_to_coordinator
           ~ws_url

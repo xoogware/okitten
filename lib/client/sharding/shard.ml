@@ -16,6 +16,7 @@ type t =
   ; ws_url : string
   ; ws_conn : Websocket_lwt_unix.conn
   ; intents : int
+  ; push_cmd : command option -> unit
   ; cmd : command Lwt_stream.t
   ; push_to_coordinator : Commands.Coordinator.command option -> unit
   }
@@ -30,7 +31,7 @@ let connect_gateway ~ws_url =
   connect ~ctx client uri
 ;;
 
-let init ~id ~token ~intents ~cmd ~push_to_coordinator ~ws_url =
+let init ~id ~token ~intents ~push_cmd ~cmd ~push_to_coordinator ~ws_url =
   let%lwt ws_conn = connect_gateway ~ws_url in
   return
     { id
@@ -46,6 +47,7 @@ let init ~id ~token ~intents ~cmd ~push_to_coordinator ~ws_url =
     ; ws_url
     ; ws_conn
     ; intents
+    ; push_cmd
     ; cmd
     ; push_to_coordinator
     }
@@ -71,34 +73,53 @@ let send_identify ~total_shards shard =
   return shard
 ;;
 
+let handle_packet packet s = return s
+
 let start shard =
-  let handle_gateway_rx s =
-    let open Websocket in
-    Websocket_lwt_unix.read s.ws_conn
-    >|= function
-    | { Frame.opcode = Close; content; _ } ->
-      Logs.debug (fun m -> m "Connection closed on shard %d" s.id);
-      None
-    | _ -> Some s
+  let rec handle_gateway_rx ~id ~push ~ws_conn ~cancellation_semaphore =
+    if Lwt_mvar.is_empty cancellation_semaphore = false
+    then return ()
+    else
+      let open Websocket in
+      let%lwt packet = Websocket_lwt_unix.read ws_conn in
+      push (Some (Handle packet));
+      match packet with
+      | { Frame.opcode = Close; content; _ } ->
+        Logs.debug (fun m -> m "Connection closed on shard %d for %s" id content);
+        return ()
+      | _ -> handle_gateway_rx ~id ~push ~ws_conn ~cancellation_semaphore
   in
-  let handle_cmds ~event_loop s =
-    match%lwt Lwt_stream.get s.cmd with
-    | None ->
+  let rec event_loop ~cancellation_semaphore s =
+    let rec handle_cmds' s cmds =
+      match cmds with
+      | [] -> return @@ Some s
+      | Identify total_shards :: xs ->
+        let%lwt s = send_identify ~total_shards s in
+        Lwt.async (fun () ->
+          handle_gateway_rx
+            ~id:shard.id
+            ~push:shard.push_cmd
+            ~ws_conn:shard.ws_conn
+            ~cancellation_semaphore);
+        handle_cmds' s xs
+      | Handle packet :: xs ->
+        let%lwt s = handle_packet packet s in
+        handle_cmds' s xs
+      | Shutdown :: _ ->
+        let%lwt _ = Lwt_mvar.put cancellation_semaphore () in
+        return None
+    in
+    s.cmd
+    |> Lwt_stream.get_available
+    |> handle_cmds' s
+    >>= function
+    | Some s ->
       let%lwt _ = Lwt_unix.sleep 0.1 in
-      event_loop s
-    | Some cmd ->
-      (match cmd with
-       | Identify total_shards ->
-         let%lwt s = send_identify ~total_shards s in
-         event_loop s
-       | Shutdown -> return ())
-  in
-  let rec event_loop s =
-    let%lwt s = handle_gateway_rx s in
-    match s with
+      event_loop ~cancellation_semaphore s
     | None -> return ()
-    | Some s -> handle_cmds ~event_loop s
   in
   Logs.debug (fun m -> m "Starting shard with ID %d." shard.id);
-  event_loop shard
+  (* this will be filled with a unit value to signal cancellation to gateway listener *)
+  let cancellation_semaphore = Lwt_mvar.create_empty () in
+  event_loop ~cancellation_semaphore shard
 ;;
