@@ -44,7 +44,7 @@ let () =
      let%lwt bot = Client.ClientBuilder.(init ~token |> build) in
      Fmt_tty.setup_std_outputs ?style_renderer:(Some `Ansi_tty) ();
      let rec loop () = Lwt_unix.sleep 5. >>= fun _ -> loop () in
-     Client.start bot
+     Client.start ~shards:`Autosharded bot
      >>= fun _ ->
      Logs.info (fun f -> f "Bot started ^_^");
      loop ())
