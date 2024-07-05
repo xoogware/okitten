@@ -1,4 +1,5 @@
 open Lwt
+open Utils
 module RouteMap = Map.Make (String)
 
 type ratelimit_info =
@@ -119,7 +120,7 @@ let rec watch_requests ratelimiter =
   let perform ~meth ~resource ~headers ~body self =
     let uri = Uri.of_string resource in
     let body = Option.map (fun b -> Cohttp_lwt.Body.of_string b) body in
-    let headers = headers |> Utils.unwrap_or ~default:(Cohttp.Header.init ()) in
+    let headers = headers /// Cohttp.Header.init () in
     let headers =
       Cohttp.Header.add_list
         headers
