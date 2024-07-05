@@ -44,6 +44,9 @@ let start shard =
       event_loop s
     | Some cmd ->
       (match cmd with
+       | Identify ->
+         Logs.debug (fun m -> m "Identifying shard %d." shard.id);
+         event_loop s
        | Shutdown -> return ())
   in
   Logs.debug (fun m -> m "Starting shard with ID %d." shard.id);
