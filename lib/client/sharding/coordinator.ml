@@ -26,26 +26,26 @@ let spawn ~token ~shards ~shard_count ~ws_url ~push_to_coordinator =
   in
   let rec spawn' spawned_shards cnt next_shard_id =
     match cnt with
-    | 0 -> spawned_shards
+    | 0 -> return spawned_shards
     | cnt ->
       let chan, push = Lwt_stream.create () in
-      let shard =
+      let%lwt shard =
         Shard.init
           ~id:next_shard_id
           ~token
           ~intents:0
           ~cmd:chan
-          ~ws_url
           ~push_to_coordinator
+          ~ws_url
       in
       Lwt.async (fun () -> Shard.start shard);
       spawn' ((next_shard_id, push, false) :: spawned_shards) (cnt - 1) (next_shard_id + 1)
   in
   shards
-  |> find_start_index 0
+  |> find_start_index (-1) (* Starting at -1 so initial shard has index 0 *)
   |> spawn' [] shard_count
-  |> List.append shards
-  |> List.sort (fun (a, _, _) (b, _, _) -> a - b)
+  >|= fun spawned ->
+  List.append spawned shards |> List.sort (fun (a, _, _) (b, _, _) -> a - b)
 ;;
 
 let run t =
@@ -59,7 +59,7 @@ let run t =
         match List.find_opt (fun (_, _, identified) -> identified = false) t.shards with
         | Some (id, push, _) ->
           Logs.debug (fun m -> m "OK to identify shard %d." id);
-          push (Some Identify);
+          push (Some (Identify (List.length t.shards)));
           let shard = id, push, true in
           let shards =
             List.map
@@ -77,7 +77,7 @@ let run t =
       (match cmd with
        | Spawn (shard_count, ws_url, res_pipe) ->
          Logs.debug (fun m -> m "Received request to spawn %d shards" shard_count);
-         let shards =
+         let%lwt shards =
            spawn
              ~token:t.token
              ~shards:t.shards

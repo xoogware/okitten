@@ -10,6 +10,6 @@ end
 
 module Shard = struct
   type command =
-    | Identify
+    | Identify of int (** Total shards to identify out of *)
     | Shutdown
 end
