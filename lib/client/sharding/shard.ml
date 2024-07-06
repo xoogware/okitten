@@ -9,7 +9,7 @@ type t =
   ; last_heartbeat_was_acknowledged : bool
   ; heartbeat_interval : float option
   ; on_get_appid : string -> unit
-  ; seq : int
+  ; seq : int option
   ; session_id : string option
   ; started_at : float
   ; token : string
@@ -40,7 +40,7 @@ let init ~id ~token ~intents ~push_cmd ~cmd ~push_to_coordinator ~ws_url =
     ; last_heartbeat_was_acknowledged = false
     ; heartbeat_interval = None
     ; on_get_appid = (fun _ -> ())
-    ; seq = 0
+    ; seq = None
     ; session_id = None
     ; started_at = 0.
     ; token
@@ -64,8 +64,8 @@ let send_identify ~total_shards shard =
     ; shard = shard.id, total_shards
     ; intents = shard.intents
     }
-    |> payload_of ~op:`Identify
-    |> payload_to_yojson identify_to_yojson
+    |> payload_of ~op:Identify
+    |> yojson_of_payload yojson_of_identify
     |> Yojson.Safe.to_string
   in
   let frame = Websocket.Frame.create ~opcode:Text ~content:identify () in
@@ -73,22 +73,77 @@ let send_identify ~total_shards shard =
   return shard
 ;;
 
-let handle_packet packet s = return s
+let handle_dispatch ~json (s : t) =
+  let module YSU = Yojson.Safe.Util in
+  let open Gateway in
+  let dispatch_op = json |> YSU.member "t" |> Dispatch.event_of_yojson in
+  let data = json |> YSU.member "d" in
+  match dispatch_op with
+  | Hello ->
+    let data = hello_of_yojson data in
+    return { s with heartbeat_interval = Some (float_of_int data.heartbeat_interval) }
+  | e ->
+    Logs.warn (fun m -> m "Got unhandled Dispatch event %s" @@ Dispatch.event_to_string e);
+    return s
+;;
+
+let handle_packet ~packet ~cancellation_semaphore s =
+  let open Websocket in
+  let module YSU = Yojson.Safe.Util in
+  let Frame.{ opcode; content; _ } = packet in
+  match opcode with
+  | Close ->
+    let%lwt _ = Lwt_mvar.put cancellation_semaphore () in
+    return s
+  | Text ->
+    let json = Yojson.Safe.from_string content in
+    let opcode = json |> YSU.member "op" |> Gateway.Opcode.t_of_yojson in
+    let data = json |> YSU.member "d" in
+    (match opcode with
+     | Hello ->
+       let data = Gateway.hello_of_yojson data in
+       return { s with heartbeat_interval = Some (float_of_int data.heartbeat_interval) }
+     | Dispatch -> handle_dispatch ~json s
+     | HeartbeatAck -> return { s with last_heartbeat_ack_at = Some (Unix.time ()) }
+     | op ->
+       Logs.warn (fun m ->
+         m "Received unimplemented opcode %s" @@ Gateway.Opcode.to_string op);
+       return s)
+  | _ ->
+    Logs.err (fun m -> m "Got unexpected opcode %s" (Frame.Opcode.to_string opcode));
+    return s
+;;
+
+let rec handle_gateway_rx ~id ~push ~ws_conn ~cancellation_semaphore =
+  if Lwt_mvar.is_empty cancellation_semaphore = false
+  then return ()
+  else
+    let open Websocket in
+    let%lwt packet = Websocket_lwt_unix.read ws_conn in
+    push (Some (Handle packet));
+    match packet with
+    | { Frame.opcode = Close; content; _ } ->
+      Logs.debug (fun m -> m "Connection closed on shard %d unexpectedly" id);
+      return ()
+    | _ -> handle_gateway_rx ~id ~push ~ws_conn ~cancellation_semaphore
+;;
+
+let send_heartbeat s =
+  let open Websocket in
+  let open Gateway in
+  let content =
+    s.seq
+    |> payload_of ~op:Heartbeat
+    |> yojson_of_payload yojson_of_heartbeat
+    |> Yojson.Safe.to_string
+  in
+  let%lwt _ =
+    Frame.create ~opcode:Text ~content () |> Websocket_lwt_unix.write s.ws_conn
+  in
+  return { s with last_heartbeat_sent = Some (Unix.time ()) }
+;;
 
 let start shard =
-  let rec handle_gateway_rx ~id ~push ~ws_conn ~cancellation_semaphore =
-    if Lwt_mvar.is_empty cancellation_semaphore = false
-    then return ()
-    else
-      let open Websocket in
-      let%lwt packet = Websocket_lwt_unix.read ws_conn in
-      push (Some (Handle packet));
-      match packet with
-      | { Frame.opcode = Close; content; _ } ->
-        Logs.debug (fun m -> m "Connection closed on shard %d for %s" id content);
-        return ()
-      | _ -> handle_gateway_rx ~id ~push ~ws_conn ~cancellation_semaphore
-  in
   let rec event_loop ~cancellation_semaphore s =
     let rec handle_cmds' s cmds =
       match cmds with
@@ -103,11 +158,21 @@ let start shard =
             ~cancellation_semaphore);
         handle_cmds' s xs
       | Handle packet :: xs ->
-        let%lwt s = handle_packet packet s in
+        let%lwt s = handle_packet ~packet ~cancellation_semaphore s in
         handle_cmds' s xs
       | Shutdown :: _ ->
         let%lwt _ = Lwt_mvar.put cancellation_semaphore () in
         return None
+    in
+    let%lwt s =
+      match s.heartbeat_interval with
+      | Some heartbeat_interval ->
+        let now = Unix.time () in
+        (* heartbeat interval is sent in ms *)
+        if now -. (s.last_heartbeat_sent /// 0.) < heartbeat_interval /. 1000.
+        then return s
+        else send_heartbeat s
+      | None -> return s
     in
     s.cmd
     |> Lwt_stream.get_available

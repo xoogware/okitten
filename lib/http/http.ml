@@ -48,9 +48,5 @@ let get_bot_gateway http =
     Request.make ~route:"https://discord.com/api/v10/gateway/bot" ~meth:Get |> fire ~http
   in
   let%lwt str_body = res |> snd |> Cohttp_lwt.Body.to_string in
-  return
-  @@
-  match str_body |> Yojson.Safe.from_string |> Models.Gateway.bot_gateway_of_yojson with
-  | Ok b -> Ok b
-  | Error e -> Error ("Unable to deserialize: " ^ e)
+  return (str_body |> Yojson.Safe.from_string |> Models.Gateway.bot_gateway_of_yojson)
 ;;

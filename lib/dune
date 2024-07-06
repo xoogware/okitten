@@ -9,13 +9,12 @@
   logs.lwt
   lwt
   lwt.unix
-  ppx_deriving_yojson.runtime
   uri
   str
   yojson
   websocket
   websocket-lwt-unix)
  (preprocess
-  (pps ppx_deriving_yojson lwt_ppx)))
+  (pps ppx_yojson_conv lwt_ppx)))
 
 (include_subdirs unqualified)

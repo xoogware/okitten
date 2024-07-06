@@ -54,7 +54,7 @@
               lwt
               lwt_ppx
               ppx_deriving
-              ppx_deriving_yojson
+              ppx_yojson_conv
               yojson
             ];
             src = ./.;

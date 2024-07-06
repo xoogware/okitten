@@ -33,11 +33,7 @@ let start ?shards c =
     return c
   in
   Logs.debug (fun m -> m "Fetching Gateway info");
-  let%lwt g =
-    match%lwt Http.get_bot_gateway c.http with
-    | Ok g -> return g
-    | Error e -> failwith e
-  in
+  let%lwt g = Http.get_bot_gateway c.http in
   match shards with
   | None ->
     Logs.info (fun m -> m "Shard parameter not passed; starting one shard.");
