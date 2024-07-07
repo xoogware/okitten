@@ -11,7 +11,10 @@ let () =
     (Logs.set_level @@ Some Logs.Debug;
      Fmt_tty.setup_std_outputs ();
      Logs.set_reporter @@ Logs_fmt.reporter ();
-     let%lwt bot = Client.ClientBuilder.(init ~token |> build) in
+     let%lwt bot =
+       Client.ClientBuilder.(
+         init ~token ~intents:Intents.(message_content lor guild_messages) |> build)
+     in
      Fmt_tty.setup_std_outputs ?style_renderer:(Some `Ansi_tty) ();
      let rec loop () = Lwt_unix.sleep 5. >>= fun _ -> loop () in
      Client.start ~shards:`Autosharded bot

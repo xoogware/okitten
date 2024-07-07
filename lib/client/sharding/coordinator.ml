@@ -9,16 +9,17 @@ type t =
   ; push_cmd : command option -> unit
   ; last_identify : float option
   ; token : string
+  ; intents : int
   ; shards :
       tracked_shard list (* TODO: use a map for this instead for faster replacements *)
   }
 
-let init ~token =
+let init ~token ~intents =
   let cmd_stream, push_cmd = Lwt_stream.create () in
-  { cmd_stream; push_cmd; last_identify = None; token; shards = [] }
+  { cmd_stream; push_cmd; last_identify = None; token; intents; shards = [] }
 ;;
 
-let spawn ~token ~shards ~shard_count ~ws_url ~push_to_coordinator =
+let spawn ~token ~intents ~shards ~shard_count ~ws_url ~push_to_coordinator =
   let rec find_start_index max = function
     | (id, _, _) :: xs when id > max -> find_start_index id xs
     | _ :: xs -> find_start_index max xs
@@ -33,7 +34,7 @@ let spawn ~token ~shards ~shard_count ~ws_url ~push_to_coordinator =
         Shard.init
           ~id:next_shard_id
           ~token
-          ~intents:0
+          ~intents
           ~push_cmd:push
           ~cmd:chan
           ~push_to_coordinator
@@ -81,6 +82,7 @@ let run t =
          let%lwt shards =
            spawn
              ~token:t.token
+             ~intents:t.intents
              ~shards:t.shards
              ~shard_count
              ~ws_url

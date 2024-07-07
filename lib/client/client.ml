@@ -13,12 +13,12 @@ module ClientBuilder = struct
     ; intents : int
     }
 
-  let init ~token = { token; intents = 0 }
+  let init ~token ~intents = { token; intents }
   let set_intents intents builder = { builder with intents }
 
   let build b =
     let http = Http.Builder.create ~token:b.token |> Http.Builder.build in
-    let coordinator = Coordinator.init ~token:b.token in
+    let coordinator = Coordinator.init ~token:b.token ~intents:b.intents in
     let push_coordinator_cmd = Coordinator.run coordinator in
     return { http; push_coordinator_cmd; token = b.token; intents = b.intents }
   ;;
