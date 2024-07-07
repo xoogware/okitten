@@ -99,9 +99,20 @@ let handle_packet ~packet ~cancellation_semaphore s =
     let json = Yojson.Safe.from_string content in
     let opcode = json |> YSU.member "op" |> Gateway.Opcode.t_of_yojson in
     let data = json |> YSU.member "d" in
+    let seq = json |> YSU.member "s" |> option_of_yojson int_of_yojson in
+    let s =
+      match seq with
+      | Some seq ->
+        Logs.debug (fun m -> m "Seq adjusted to %d" seq);
+        { s with seq = Some seq }
+      | None -> s
+    in
     (match opcode with
      | Hello ->
        let data = Gateway.hello_of_yojson data in
+       Logs.debug (fun m ->
+         m "Shard %d heartbeating every %f seconds" s.id
+         @@ (float_of_int data.heartbeat_interval /. 1000.));
        return { s with heartbeat_interval = Some (float_of_int data.heartbeat_interval) }
      | Dispatch -> handle_dispatch ~json s
      | HeartbeatAck -> return { s with last_heartbeat_ack_at = Some (Unix.time ()) }
@@ -129,6 +140,7 @@ let rec handle_gateway_rx ~id ~push ~ws_conn ~cancellation_semaphore =
 ;;
 
 let send_heartbeat s =
+  Logs.debug (fun m -> m "Shard %d OK to heartbeat. seq=%d" s.id (s.seq /// -1));
   let open Websocket in
   let open Gateway in
   let content =
