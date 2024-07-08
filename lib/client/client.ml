@@ -24,11 +24,11 @@ module ClientBuilder = struct
   ;;
 end
 
-let start ?shards c =
+let start ?shards ?with_presence c =
   Logs.info (fun m -> m "Running OKitten v%s." @@ Version.get ());
-  let initialize_shards ~count ~ws_url c =
+  let initialize_shards ~count ~ws_url ~with_presence c =
     let res_pipe = Lwt_mvar.create_empty () in
-    c.push_coordinator_cmd (Some (Spawn (count, ws_url, res_pipe)));
+    c.push_coordinator_cmd (Some (Spawn (count, ws_url, with_presence, res_pipe)));
     let%lwt _ = Lwt_mvar.take res_pipe in
     return c
   in
@@ -37,11 +37,11 @@ let start ?shards c =
   match shards with
   | None ->
     Logs.info (fun m -> m "Shard parameter not passed; starting one shard.");
-    return @@ Ok (initialize_shards ~count:1 ~ws_url:g.url c)
+    return @@ Ok (initialize_shards ~count:1 ~ws_url:g.url ~with_presence c)
   | Some `Autosharded ->
     Logs.info (fun m -> m "Autosharding; using %d shards." g.shards);
-    return @@ Ok (initialize_shards ~count:g.shards ~ws_url:g.url c)
+    return @@ Ok (initialize_shards ~count:g.shards ~ws_url:g.url ~with_presence c)
   | Some (`Manual shards) ->
     Logs.info (fun m -> m "Using %d shards." shards);
-    return @@ Ok (initialize_shards ~count:shards ~ws_url:g.url c)
+    return @@ Ok (initialize_shards ~count:shards ~ws_url:g.url ~with_presence c)
 ;;

@@ -19,7 +19,8 @@ let init ~token ~intents =
   { cmd_stream; push_cmd; last_identify = None; token; intents; shards = [] }
 ;;
 
-let spawn ~token ~intents ~shards ~shard_count ~ws_url ~push_to_coordinator =
+let spawn ~token ~intents ~shards ~shard_count ~ws_url ~with_presence ~push_to_coordinator
+  =
   let rec find_start_index max = function
     | (id, _, _) :: xs when id > max -> find_start_index id xs
     | _ :: xs -> find_start_index max xs
@@ -39,6 +40,7 @@ let spawn ~token ~intents ~shards ~shard_count ~ws_url ~push_to_coordinator =
           ~cmd:chan
           ~push_to_coordinator
           ~ws_url
+          ~with_presence
       in
       Lwt.async (fun () -> Shard.start shard);
       spawn' ((next_shard_id, push, false) :: spawned_shards) (cnt - 1) (next_shard_id + 1)
@@ -77,7 +79,7 @@ let run t =
       run' t
     | [ cmd ] ->
       (match cmd with
-       | Spawn (shard_count, ws_url, res_pipe) ->
+       | Spawn (shard_count, ws_url, with_presence, res_pipe) ->
          Logs.debug (fun m -> m "Received request to spawn %d shards" shard_count);
          let%lwt shards =
            spawn
@@ -86,6 +88,7 @@ let run t =
              ~shards:t.shards
              ~shard_count
              ~ws_url
+             ~with_presence
              ~push_to_coordinator:t.push_cmd
          in
          let%lwt _ = Lwt_mvar.put res_pipe Ok in

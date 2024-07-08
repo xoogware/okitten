@@ -20,6 +20,101 @@ type identify_connection =
   }
 [@@deriving yojson]
 
+(* TODO: builders *)
+module Presence = struct
+  type activity_kind =
+    | Game
+    | Streaming
+    | Listening
+    | Watching
+    | Custom
+    | Competing
+
+  let int_of_activity_kind = function
+    | Game -> 0
+    | Streaming -> 1
+    | Listening -> 2
+    | Watching -> 3
+    | Custom -> 4
+    | Competing -> 5
+  ;;
+
+  let activity_kind_of_int = function
+    | 0 -> Game
+    | 1 -> Streaming
+    | 2 -> Listening
+    | 3 -> Watching
+    | 4 -> Custom
+    | 5 -> Competing
+    | _ -> failwith "unknown activity kind"
+  ;;
+
+  let yojson_of_activity_kind k = `Int (int_of_activity_kind k)
+
+  let activity_kind_of_yojson = function
+    | `Int v -> activity_kind_of_int v
+    | _ -> failwith "invalid activity kind"
+  ;;
+
+  type timestamps =
+    { start : int option
+    ; finish : int option [@key "end"]
+    }
+  [@@deriving yojson]
+
+  type activity =
+    { name : string
+    ; kind : activity_kind [@key "type"]
+    ; url : string option
+    ; created_at : int (** Unix Timestamp (ms) of when activity was added to session *)
+    ; timestamps : timestamps option
+    ; application_id : string option
+    ; details : string option
+    ; state : string option
+    (* TODO: add more fields according to https://discord.com/developers/docs/topics/gateway-events#activity-object-activity-structure *)
+    }
+  [@@deriving yojson]
+
+  type status =
+    | Online
+    | DoNotDisturb
+    | Idle
+    | Invisible
+    | Offline
+
+  let status_of_string = function
+    | "online" -> Online
+    | "dnd" -> DoNotDisturb
+    | "idle" -> Idle
+    | "invisible" -> Invisible
+    | "offline" -> Offline
+    | _ -> failwith "invalid status"
+  ;;
+
+  let string_of_status = function
+    | Online -> "online"
+    | DoNotDisturb -> "dnd"
+    | Idle -> "idle"
+    | Invisible -> "invisible"
+    | Offline -> "offline"
+  ;;
+
+  let status_of_yojson = function
+    | `String s -> status_of_string s
+    | _ -> failwith "invalid status"
+  ;;
+
+  let yojson_of_status s = `String (string_of_status s)
+
+  type t =
+    { since : int option
+    ; activities : activity list
+    ; status : status
+    ; afk : bool
+    }
+  [@@deriving yojson]
+end
+
 type identify =
   { token : string
   ; properties : identify_connection
@@ -27,6 +122,7 @@ type identify =
   ; large_threshold : int
   ; shard : int * int
   ; intents : int
+  ; presence : Presence.t option
   }
 [@@deriving yojson]
 

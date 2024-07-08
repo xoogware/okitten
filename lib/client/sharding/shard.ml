@@ -19,6 +19,7 @@ type t =
   ; push_cmd : command option -> unit
   ; cmd : command Lwt_stream.t
   ; push_to_coordinator : Commands.Coordinator.command option -> unit
+  ; presence : Gateway.Presence.t option
   }
 
 let connect_gateway ~ws_url =
@@ -31,7 +32,7 @@ let connect_gateway ~ws_url =
   connect ~ctx client uri
 ;;
 
-let init ~id ~token ~intents ~push_cmd ~cmd ~push_to_coordinator ~ws_url =
+let init ~id ~token ~intents ~push_cmd ~cmd ~push_to_coordinator ~ws_url ~with_presence =
   let%lwt ws_conn = connect_gateway ~ws_url in
   return
     { id
@@ -50,6 +51,7 @@ let init ~id ~token ~intents ~push_cmd ~cmd ~push_to_coordinator ~ws_url =
     ; push_cmd
     ; cmd
     ; push_to_coordinator
+    ; presence = with_presence
     }
 ;;
 
@@ -63,6 +65,7 @@ let send_identify ~total_shards shard =
     ; large_threshold = 50
     ; shard = shard.id, total_shards
     ; intents = shard.intents
+    ; presence = shard.presence
     }
     |> payload_of ~op:Identify
     |> yojson_of_payload yojson_of_identify

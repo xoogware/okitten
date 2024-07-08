@@ -8,6 +8,7 @@ val init
   -> cmd:Commands.Shard.command Lwt_stream.t
   -> push_to_coordinator:(Commands.Coordinator.command option -> unit)
   -> ws_url:string
+  -> with_presence:Gateway.Presence.t option
   -> t Lwt.t
 
 val start : t -> unit Lwt.t
