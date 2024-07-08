@@ -53,9 +53,7 @@ let main =
     Presence.(
       empty |> since_now |> with_activity activity |> set_status Idle |> set_afk false)
   in
-  let%lwt client =
-    ClientBuilder.(
-      init ~token ~intents:Intents.(message_content lor guild_messages) |> build) in
+  let%lwt client = ClientBuilder.(init ~token ~intents:0 |> build) in
   let%lwt _ = Client.start ~shards:`Autosharded ~with_presence:presence in
   wait ()
 ;;
