@@ -19,7 +19,7 @@ type t =
   ; push_cmd : command option -> unit
   ; cmd : command Lwt_stream.t
   ; push_to_coordinator : Commands.Coordinator.command option -> unit
-  ; presence : Gateway.Presence.t option
+  ; presence : Presence.t option
   }
 
 let connect_gateway ~ws_url =
