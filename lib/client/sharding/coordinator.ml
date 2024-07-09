@@ -2,7 +2,7 @@ open Lwt
 open Utils
 open Commands.Coordinator
 
-type tracked_shard = int * (Commands.Shard.command option -> unit) * bool
+type tracked_shard = int * (Commands.Shard.command -> unit) * bool
 
 type t =
   { cmd_stream : command Lwt_stream.t
@@ -26,11 +26,13 @@ let spawn ~token ~intents ~shards ~shard_count ~ws_url ~with_presence ~push_to_c
     | _ :: xs -> find_start_index max xs
     | [] -> max + 1
   in
+  let wrap_push push c = push @@ Some c in
   let rec spawn' spawned_shards cnt next_shard_id =
     match cnt with
     | 0 -> return spawned_shards
     | cnt ->
       let chan, push = Lwt_stream.create () in
+      let push = wrap_push push in
       let%lwt shard =
         Shard.init
           ~id:next_shard_id
@@ -63,7 +65,7 @@ let run t =
         match List.find_opt (fun (_, _, identified) -> identified = false) t.shards with
         | Some (id, push, _) ->
           Logs.debug (fun m -> m "OK to identify shard %d." id);
-          push (Some (Identify (List.length t.shards)));
+          push (Identify (List.length t.shards));
           let shard = id, push, true in
           let shards =
             List.map
@@ -95,7 +97,7 @@ let run t =
          run' { t with shards }
        | Shutdown shard_id ->
          let _, push, _ = t.shards |> List.find (fun (id, _, _) -> id = shard_id) in
-         push (Some Shutdown);
+         push Shutdown;
          Logs.debug (fun m -> m "Received shutdown for shard %d" shard_id);
          run' t
        | ShutdownAll ->

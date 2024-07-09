@@ -4,7 +4,7 @@ val init
   :  id:int
   -> token:string
   -> intents:int
-  -> push_cmd:(Commands.Shard.command option -> unit)
+  -> push_cmd:(Commands.Shard.command -> unit)
   -> cmd:Commands.Shard.command Lwt_stream.t
   -> push_to_coordinator:(Commands.Coordinator.command option -> unit)
   -> ws_url:string
@@ -12,3 +12,5 @@ val init
   -> t Lwt.t
 
 val start : t -> unit Lwt.t
+val latency : t -> float
+val set_presence : Presence.t -> t -> unit

@@ -16,7 +16,7 @@ type t =
   ; ws_url : string
   ; ws_conn : Websocket_lwt_unix.conn
   ; intents : int
-  ; push_cmd : command option -> unit
+  ; push_cmd : command -> unit
   ; cmd : command Lwt_stream.t
   ; push_to_coordinator : Commands.Coordinator.command option -> unit
   ; presence : Presence.t option
@@ -131,7 +131,7 @@ let rec handle_gateway_rx ~id ~push ~ws_conn ~cancellation_semaphore =
   else
     let open Websocket in
     let%lwt packet = Websocket_lwt_unix.read ws_conn in
-    push (Some (Handle packet));
+    push (Handle packet);
     match packet with
     | { Frame.opcode = Close; _ } ->
       Logs.debug (fun m -> m "Connection closed on shard %d unexpectedly" id);
@@ -180,6 +180,19 @@ let do_actions ~cancellation_semaphore s =
     | Handle packet :: xs ->
       let%lwt s = handle_packet ~packet ~cancellation_semaphore s in
       perform s xs
+    | SetPresence p :: xs ->
+      let open Websocket in
+      let open Models.Gateway in
+      let content =
+        p
+        |> payload_of ~op:PresenceUpdate
+        |> yojson_of_payload Presence.yojson_of_t
+        |> Yojson.Safe.to_string
+      in
+      let%lwt _ =
+        Frame.create ~opcode:Text ~content () |> Websocket_lwt_unix.write s.ws_conn
+      in
+      perform s xs
     | Shutdown :: _ ->
       let%lwt _ = Lwt_mvar.put cancellation_semaphore () in
       return None
@@ -209,3 +222,5 @@ let latency shard =
   | Some s, Some r -> r -. s
   | _, _ -> 0.
 ;;
+
+let set_presence presence shard = shard.push_cmd (SetPresence presence)
