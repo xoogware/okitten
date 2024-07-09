@@ -80,11 +80,8 @@ let handle_dispatch ~json (s : t) =
   let module YSU = Yojson.Safe.Util in
   let open Gateway in
   let dispatch_op = json |> YSU.member "t" |> Dispatch.event_of_yojson in
-  let data = json |> YSU.member "d" in
+  let _data = json |> YSU.member "d" in
   match dispatch_op with
-  | Hello ->
-    let data = hello_of_yojson data in
-    return { s with heartbeat_interval = Some (float_of_int data.heartbeat_interval) }
   | e ->
     Logs.warn (fun m -> m "Got unhandled Dispatch event %s" @@ Dispatch.event_to_string e);
     return s
@@ -136,62 +133,65 @@ let rec handle_gateway_rx ~id ~push ~ws_conn ~cancellation_semaphore =
     let%lwt packet = Websocket_lwt_unix.read ws_conn in
     push (Some (Handle packet));
     match packet with
-    | { Frame.opcode = Close; content; _ } ->
+    | { Frame.opcode = Close; _ } ->
       Logs.debug (fun m -> m "Connection closed on shard %d unexpectedly" id);
       return ()
     | _ -> handle_gateway_rx ~id ~push ~ws_conn ~cancellation_semaphore
 ;;
 
-let send_heartbeat s =
-  Logs.debug (fun m -> m "Shard %d OK to heartbeat. seq=%d" s.id (s.seq /// -1));
-  let open Websocket in
-  let open Gateway in
-  let content =
-    s.seq
-    |> payload_of ~op:Heartbeat
-    |> yojson_of_payload yojson_of_heartbeat
-    |> Yojson.Safe.to_string
+let try_heartbeat s =
+  let do_heartbeat s =
+    Logs.debug (fun m -> m "Shard %d OK to heartbeat. seq=%d" s.id (s.seq /// -1));
+    let open Websocket in
+    let open Gateway in
+    let content =
+      s.seq
+      |> payload_of ~op:Heartbeat
+      |> yojson_of_payload yojson_of_heartbeat
+      |> Yojson.Safe.to_string
+    in
+    let%lwt _ =
+      Frame.create ~opcode:Text ~content () |> Websocket_lwt_unix.write s.ws_conn
+    in
+    return { s with last_heartbeat_sent = Some (Unix.time ()) }
   in
-  let%lwt _ =
-    Frame.create ~opcode:Text ~content () |> Websocket_lwt_unix.write s.ws_conn
+  match s.heartbeat_interval with
+  | Some heartbeat_interval ->
+    let now = Unix.time () in
+    (* heartbeat interval is sent in ms *)
+    if now -. (s.last_heartbeat_sent /// 0.) < heartbeat_interval /. 1000.
+    then return s
+    else do_heartbeat s
+  | None -> return s
+;;
+
+let do_actions ~cancellation_semaphore s =
+  let rec perform s = function
+    | [] -> return @@ Some s
+    | Identify total_shards :: xs ->
+      let%lwt s = send_identify ~total_shards s in
+      Lwt.async (fun () ->
+        handle_gateway_rx
+          ~id:s.id
+          ~push:s.push_cmd
+          ~ws_conn:s.ws_conn
+          ~cancellation_semaphore);
+      perform s xs
+    | Handle packet :: xs ->
+      let%lwt s = handle_packet ~packet ~cancellation_semaphore s in
+      perform s xs
+    | Shutdown :: _ ->
+      let%lwt _ = Lwt_mvar.put cancellation_semaphore () in
+      return None
   in
-  return { s with last_heartbeat_sent = Some (Unix.time ()) }
+  s.cmd |> Lwt_stream.get_available |> perform s
 ;;
 
 let start shard =
   let rec event_loop ~cancellation_semaphore s =
-    let rec handle_cmds' s cmds =
-      match cmds with
-      | [] -> return @@ Some s
-      | Identify total_shards :: xs ->
-        let%lwt s = send_identify ~total_shards s in
-        Lwt.async (fun () ->
-          handle_gateway_rx
-            ~id:shard.id
-            ~push:shard.push_cmd
-            ~ws_conn:shard.ws_conn
-            ~cancellation_semaphore);
-        handle_cmds' s xs
-      | Handle packet :: xs ->
-        let%lwt s = handle_packet ~packet ~cancellation_semaphore s in
-        handle_cmds' s xs
-      | Shutdown :: _ ->
-        let%lwt _ = Lwt_mvar.put cancellation_semaphore () in
-        return None
-    in
-    let%lwt s =
-      match s.heartbeat_interval with
-      | Some heartbeat_interval ->
-        let now = Unix.time () in
-        (* heartbeat interval is sent in ms *)
-        if now -. (s.last_heartbeat_sent /// 0.) < heartbeat_interval /. 1000.
-        then return s
-        else send_heartbeat s
-      | None -> return s
-    in
-    s.cmd
-    |> Lwt_stream.get_available
-    |> handle_cmds' s
+    s
+    |> try_heartbeat
+    >>= do_actions ~cancellation_semaphore
     >>= function
     | Some s ->
       let%lwt _ = Lwt_unix.sleep 0.1 in
@@ -202,4 +202,10 @@ let start shard =
   (* this will be filled with a unit value to signal cancellation to gateway listener *)
   let cancellation_semaphore = Lwt_mvar.create_empty () in
   event_loop ~cancellation_semaphore shard
+;;
+
+let latency shard =
+  match shard.last_heartbeat_sent, shard.last_heartbeat_ack_at with
+  | Some s, Some r -> r -. s
+  | _, _ -> 0.
 ;;
