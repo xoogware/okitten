@@ -55,6 +55,8 @@ let init ~id ~token ~intents ~push_cmd ~cmd ~push_to_coordinator ~ws_url ~with_p
     }
 ;;
 
+let now () = Unix.gettimeofday () *. 1000.
+
 let send_payload ?op s p =
   let p = Yojson.Safe.to_string p in
   let frame =
@@ -93,6 +95,12 @@ let handle_dispatch ~json (s : t) =
     return s
 ;;
 
+let latency shard =
+  match shard.last_heartbeat_sent, shard.last_heartbeat_ack_at with
+  | Some s, Some r -> r -. s
+  | a, b -> 0.
+;;
+
 let handle_packet ~packet ~cancellation_semaphore s =
   let open Websocket in
   let module YSU = Yojson.Safe.Util in
@@ -121,7 +129,15 @@ let handle_packet ~packet ~cancellation_semaphore s =
          @@ (float_of_int data.heartbeat_interval /. 1000.));
        return { s with heartbeat_interval = Some (float_of_int data.heartbeat_interval) }
      | Dispatch -> handle_dispatch ~json s
-     | HeartbeatAck -> return { s with last_heartbeat_ack_at = Some (Unix.time ()) }
+     | HeartbeatAck ->
+       let s =
+         { s with
+           last_heartbeat_ack_at = Some (now ())
+         ; last_heartbeat_was_acknowledged = true
+         }
+       in
+       Logs.debug (fun m -> m "Shard %d heartbeat acked (%fms)" s.id (latency s));
+       return s
      | op ->
        Logs.warn (fun m ->
          m "Received unimplemented opcode %s" @@ Gateway.Opcode.to_string op);
@@ -147,30 +163,33 @@ let rec handle_gateway_rx ~cancellation_semaphore s =
 
 let try_heartbeat s =
   let do_heartbeat s =
-    Logs.debug (fun m -> m "Shard %d OK to heartbeat. seq=%d" s.id (s.seq /// -1));
-    let open Gateway in
-    let%lwt _ =
-      s.seq
-      |> payload_of ~op:Heartbeat
-      |> yojson_of_payload yojson_of_heartbeat
-      |> send_payload s
-    in
-    return { s with last_heartbeat_sent = Some (Unix.time ()) }
+    if Option.is_some s.last_heartbeat_sent && not s.last_heartbeat_was_acknowledged
+    then (
+      Logs.debug (fun m -> m "Shard %d heartbeat was missed, shutting down" s.id);
+      s.push_cmd Shutdown;
+      return s)
+    else (
+      Logs.debug (fun m -> m "Shard %d OK to heartbeat. seq=%d" s.id (s.seq /// -1));
+      let open Gateway in
+      let%lwt _ =
+        s.seq
+        |> payload_of ~op:Heartbeat
+        |> yojson_of_payload yojson_of_heartbeat
+        |> send_payload s
+      in
+      return
+        { s with
+          last_heartbeat_sent = Some (now ())
+        ; last_heartbeat_was_acknowledged = false
+        })
   in
   match s.heartbeat_interval with
   | Some heartbeat_interval ->
-    let now = Unix.time () in
     (* heartbeat interval is sent in ms *)
-    if now -. (s.last_heartbeat_sent /// 0.) < heartbeat_interval /. 1000.
+    if now () -. (s.last_heartbeat_sent /// 0.) < heartbeat_interval
     then return s
     else do_heartbeat s
   | None -> return s
-;;
-
-let latency shard =
-  match shard.last_heartbeat_sent, shard.last_heartbeat_ack_at with
-  | Some s, Some r -> r -. s
-  | _, _ -> 0.
 ;;
 
 let set_presence presence shard = shard.push_cmd (SetPresence presence)
