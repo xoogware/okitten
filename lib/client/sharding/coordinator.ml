@@ -25,8 +25,7 @@ let spawn ~token ~intents ~shards ~shard_count ~ws_url ~with_presence ~push_to_c
     | (id, _, _) :: xs when id > max -> find_start_index id xs
     | _ :: xs -> find_start_index max xs
     | [] -> max + 1
-  in
-  let wrap_push push c = push @@ Some c in
+  and wrap_push push c = push @@ Some c in
   let rec spawn' spawned_shards cnt next_shard_id =
     match cnt with
     | 0 -> return spawned_shards
@@ -44,7 +43,7 @@ let spawn ~token ~intents ~shards ~shard_count ~ws_url ~with_presence ~push_to_c
           ~ws_url
           ~with_presence
       in
-      Lwt.async (fun () -> Shard.start shard);
+      Lwt.async (fun () -> Runner.start shard);
       spawn' ((next_shard_id, push, false) :: spawned_shards) (cnt - 1) (next_shard_id + 1)
   in
   shards
@@ -55,6 +54,7 @@ let spawn ~token ~intents ~shards ~shard_count ~ws_url ~with_presence ~push_to_c
 ;;
 
 let run t =
+  let open Commands.Shard in
   let rec run' t =
     let t =
       (* check if 5 seconds have passed - okay to identify *)

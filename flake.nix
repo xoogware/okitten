@@ -56,6 +56,8 @@
               ppx_deriving
               ppx_yojson_conv
               yojson
+
+              pkgs.libev
             ];
             src = ./.;
           };

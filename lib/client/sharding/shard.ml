@@ -55,10 +55,18 @@ let init ~id ~token ~intents ~push_cmd ~cmd ~push_to_coordinator ~ws_url ~with_p
     }
 ;;
 
+let send_payload ?op s p =
+  let p = Yojson.Safe.to_string p in
+  let frame =
+    Websocket.Frame.create ~opcode:(op /// Websocket.Frame.Opcode.Text) ~content:p ()
+  in
+  Websocket_lwt_unix.write s.ws_conn frame
+;;
+
 let send_identify ~total_shards shard =
   let open Gateway in
   Logs.debug (fun m -> m "Identifying shard %d" shard.id);
-  let identify =
+  let%lwt _ =
     { token = shard.token
     ; properties = { os = "unix"; browser = "okitten"; device = "okitten" }
     ; compress = false
@@ -69,10 +77,8 @@ let send_identify ~total_shards shard =
     }
     |> payload_of ~op:Identify
     |> yojson_of_payload yojson_of_identify
-    |> Yojson.Safe.to_string
+    |> send_payload shard
   in
-  let frame = Websocket.Frame.create ~opcode:Text ~content:identify () in
-  let%lwt _ = Websocket_lwt_unix.write shard.ws_conn frame in
   return shard
 ;;
 
@@ -125,33 +131,29 @@ let handle_packet ~packet ~cancellation_semaphore s =
     return s
 ;;
 
-let rec handle_gateway_rx ~id ~push ~ws_conn ~cancellation_semaphore =
+let rec handle_gateway_rx ~cancellation_semaphore s =
   if Lwt_mvar.is_empty cancellation_semaphore = false
   then return ()
   else
     let open Websocket in
-    let%lwt packet = Websocket_lwt_unix.read ws_conn in
-    push (Handle packet);
+    let%lwt packet = Websocket_lwt_unix.read s.ws_conn in
+    s.push_cmd (Handle packet);
     match packet with
     | { Frame.opcode = Close; _ } ->
-      Logs.debug (fun m -> m "Connection closed on shard %d unexpectedly" id);
+      Logs.debug (fun m -> m "Connection closed on shard %d unexpectedly" s.id);
       return ()
-    | _ -> handle_gateway_rx ~id ~push ~ws_conn ~cancellation_semaphore
+    | _ -> handle_gateway_rx ~cancellation_semaphore s
 ;;
 
 let try_heartbeat s =
   let do_heartbeat s =
     Logs.debug (fun m -> m "Shard %d OK to heartbeat. seq=%d" s.id (s.seq /// -1));
-    let open Websocket in
     let open Gateway in
-    let content =
+    let%lwt _ =
       s.seq
       |> payload_of ~op:Heartbeat
       |> yojson_of_payload yojson_of_heartbeat
-      |> Yojson.Safe.to_string
-    in
-    let%lwt _ =
-      Frame.create ~opcode:Text ~content () |> Websocket_lwt_unix.write s.ws_conn
+      |> send_payload s
     in
     return { s with last_heartbeat_sent = Some (Unix.time ()) }
   in
@@ -165,58 +167,6 @@ let try_heartbeat s =
   | None -> return s
 ;;
 
-let do_actions ~cancellation_semaphore s =
-  let rec perform s = function
-    | [] -> return @@ Some s
-    | Identify total_shards :: xs ->
-      let%lwt s = send_identify ~total_shards s in
-      Lwt.async (fun () ->
-        handle_gateway_rx
-          ~id:s.id
-          ~push:s.push_cmd
-          ~ws_conn:s.ws_conn
-          ~cancellation_semaphore);
-      perform s xs
-    | Handle packet :: xs ->
-      let%lwt s = handle_packet ~packet ~cancellation_semaphore s in
-      perform s xs
-    | SetPresence p :: xs ->
-      let open Websocket in
-      let open Models.Gateway in
-      let content =
-        p
-        |> payload_of ~op:PresenceUpdate
-        |> yojson_of_payload Presence.yojson_of_t
-        |> Yojson.Safe.to_string
-      in
-      let%lwt _ =
-        Frame.create ~opcode:Text ~content () |> Websocket_lwt_unix.write s.ws_conn
-      in
-      perform s xs
-    | Shutdown :: _ ->
-      let%lwt _ = Lwt_mvar.put cancellation_semaphore () in
-      return None
-  in
-  s.cmd |> Lwt_stream.get_available |> perform s
-;;
-
-let start shard =
-  let rec event_loop ~cancellation_semaphore s =
-    s
-    |> try_heartbeat
-    >>= do_actions ~cancellation_semaphore
-    >>= function
-    | Some s ->
-      let%lwt _ = Lwt_unix.sleep 0.1 in
-      event_loop ~cancellation_semaphore s
-    | None -> return ()
-  in
-  Logs.debug (fun m -> m "Starting shard with ID %d." shard.id);
-  (* this will be filled with a unit value to signal cancellation to gateway listener *)
-  let cancellation_semaphore = Lwt_mvar.create_empty () in
-  event_loop ~cancellation_semaphore shard
-;;
-
 let latency shard =
   match shard.last_heartbeat_sent, shard.last_heartbeat_ack_at with
   | Some s, Some r -> r -. s
@@ -224,3 +174,5 @@ let latency shard =
 ;;
 
 let set_presence presence shard = shard.push_cmd (SetPresence presence)
+let id s = s.id
+let cmds s = s.cmd
