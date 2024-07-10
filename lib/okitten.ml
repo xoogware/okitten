@@ -5,3 +5,8 @@ module Http = Http
 module Utils = Utils
 module Intents = Models.Gateway.Intents
 module Presence = Models.Presence
+module EventHandler = EventHandler
+
+module Models = struct
+  module Message = Message
+end

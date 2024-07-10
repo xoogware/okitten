@@ -19,6 +19,7 @@ depends: [
   "dune-build-info"
   "fmt"
   "ipaddr"
+  "iso8601"
   "lwt"
   "websocket"
   "logs"

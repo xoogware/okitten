@@ -1,4 +1,5 @@
 open Okitten
+open Lwt
 open Lwt.Infix
 
 let setup_logs () =
@@ -8,6 +9,11 @@ let setup_logs () =
 ;;
 
 let rec wait () = Lwt_unix.sleep 5. >>= fun _ -> wait ()
+let log_ready () = return @@ Logs.info (fun m -> m "Ready!")
+
+let log_message _ctx (msg : Okitten.Models.Message.t) =
+  return @@ Logs.info (fun m -> m "Got message: %s" msg.content)
+;;
 
 let () =
   let token =
@@ -28,9 +34,16 @@ let () =
       Presence.(
         empty |> since_now |> with_activity activity |> set_status Idle |> set_afk false)
     in
+    let event_handler =
+      EventHandler.(init () |> set_on_ready log_ready |> set_on_message log_message)
+    in
     let%lwt _ =
       ClientBuilder.(
-        init ~token ~intents:Intents.(message_content lor guild_messages) |> build)
+        init
+        |> set_token token
+        |> set_intents Intents.(message_content lor guild_messages)
+        |> set_event_handler event_handler
+        |> build)
       >>= Client.start ~shards:`Autosharded ~with_presence:presence
     in
     wait ()

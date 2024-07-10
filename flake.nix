@@ -50,6 +50,7 @@
               dune-build-info
               fmt
               ipaddr
+              iso8601
               logs
               lwt
               lwt_ppx

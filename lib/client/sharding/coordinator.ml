@@ -11,11 +11,19 @@ type t =
   ; intents : int
   ; shards :
       tracked_shard list (* TODO: use a map for this instead for faster replacements *)
+  ; event_handler : EventHandler.t
   }
 
-let init ~token ~intents =
+let init ~token ~intents ~event_handler =
   let cmd_stream, push_cmd = Lwt_stream.create () in
-  { cmd_stream; push_cmd; last_identify = None; token; intents; shards = [] }
+  { cmd_stream
+  ; push_cmd
+  ; last_identify = None
+  ; token
+  ; intents
+  ; shards = []
+  ; event_handler
+  }
 ;;
 
 let spawn ~token ~intents ~shards ~shard_count ~ws_url ~with_presence ~push_to_coordinator
@@ -92,6 +100,9 @@ let run t =
          in
          let%lwt _ = Lwt_mvar.put res_pipe Ok in
          run' { t with shards }
+       | Event event ->
+         EventHandler.handle_event t.event_handler event;
+         run' t
        | Shutdown shard_id ->
          let _, push, _ = t.shards |> List.find (fun (id, _, _) -> id = shard_id) in
          push Shutdown;

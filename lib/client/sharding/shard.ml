@@ -79,12 +79,20 @@ let send_identify ~total_shards shard =
   return shard
 ;;
 
-let handle_dispatch ~json (s : t) =
+let handle_dispatch ~json s =
   let module YSU = Yojson.Safe.Util in
   let open Gateway in
   let dispatch_op = json |> YSU.member "t" |> Dispatch.event_of_yojson in
-  let _data = json |> YSU.member "d" in
+  let data = json |> YSU.member "d" in
   match dispatch_op with
+  | MessageCreate ->
+    (try
+       let message = Message.t_of_yojson data in
+       s.push_to_coordinator (Some (Event (MessageCreate (message, s.id))))
+     with
+     | Ppx_yojson_conv_lib.Yojson_conv.Of_yojson_error (why, _) ->
+       Logs.err (fun m -> m "Failed to parse message: %s" (Printexc.to_string why)));
+    return s
   | e ->
     Logs.warn (fun m -> m "Got unhandled Dispatch event %s" @@ Dispatch.event_to_string e);
     return s

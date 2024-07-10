@@ -6,6 +6,7 @@
   conduit-lwt
   dune-build-info
   ipaddr.unix
+  iso8601
   logs.lwt
   lwt
   lwt.unix
