@@ -2,7 +2,7 @@ open Lwt
 
 type t =
   { http : Http.t
-  ; push_coordinator_cmd : Commands.Coordinator.command option -> unit
+  ; push_coordinator_cmd : Coordinator_commands.t option -> unit
   ; token : string
   ; intents : int
   }

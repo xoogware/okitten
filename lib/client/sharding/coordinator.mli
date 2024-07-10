@@ -4,4 +4,4 @@ type t
 val init : token:string -> intents:int -> t
 
 (** Starts the coordinator's event loop, returning the push command. *)
-val run : t -> Commands.Coordinator.command option -> unit
+val run : t -> Coordinator_commands.t option -> unit

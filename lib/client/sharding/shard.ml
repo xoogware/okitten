@@ -1,6 +1,5 @@
 open Lwt
 open Utils
-open Commands.Shard
 
 type t =
   { id : int
@@ -16,9 +15,7 @@ type t =
   ; ws_url : string
   ; ws_conn : Websocket_lwt_unix.conn
   ; intents : int
-  ; push_cmd : command -> unit
-  ; cmd : command Lwt_stream.t
-  ; push_to_coordinator : Commands.Coordinator.command option -> unit
+  ; push_to_coordinator : Coordinator_commands.t option -> unit
   ; presence : Presence.t option
   }
 
@@ -32,7 +29,7 @@ let connect_gateway ~ws_url =
   connect ~ctx client uri
 ;;
 
-let init ~id ~token ~intents ~push_cmd ~cmd ~push_to_coordinator ~ws_url ~with_presence =
+let init ~id ~token ~intents ~push_to_coordinator ~ws_url ~with_presence =
   let%lwt ws_conn = connect_gateway ~ws_url in
   return
     { id
@@ -48,8 +45,6 @@ let init ~id ~token ~intents ~push_cmd ~cmd ~push_to_coordinator ~ws_url ~with_p
     ; ws_url
     ; ws_conn
     ; intents
-    ; push_cmd
-    ; cmd
     ; push_to_coordinator
     ; presence = with_presence
     }
@@ -98,7 +93,7 @@ let handle_dispatch ~json (s : t) =
 let latency shard =
   match shard.last_heartbeat_sent, shard.last_heartbeat_ack_at with
   | Some s, Some r -> r -. s
-  | a, b -> 0.
+  | _, _ -> 0.
 ;;
 
 let handle_packet ~packet ~cancellation_semaphore s =
@@ -147,26 +142,26 @@ let handle_packet ~packet ~cancellation_semaphore s =
     return s
 ;;
 
-let rec handle_gateway_rx ~cancellation_semaphore s =
+let rec listen ~push_packet ~cancellation_semaphore s =
   if Lwt_mvar.is_empty cancellation_semaphore = false
   then return ()
   else
     let open Websocket in
     let%lwt packet = Websocket_lwt_unix.read s.ws_conn in
-    s.push_cmd (Handle packet);
+    push_packet (Some packet);
     match packet with
     | { Frame.opcode = Close; _ } ->
       Logs.debug (fun m -> m "Connection closed on shard %d unexpectedly" s.id);
       return ()
-    | _ -> handle_gateway_rx ~cancellation_semaphore s
+    | _ -> listen ~push_packet ~cancellation_semaphore s
 ;;
 
-let try_heartbeat s =
+let try_heartbeat ~cancellation_semaphore s =
   let do_heartbeat s =
     if Option.is_some s.last_heartbeat_sent && not s.last_heartbeat_was_acknowledged
     then (
       Logs.debug (fun m -> m "Shard %d heartbeat was missed, shutting down" s.id);
-      s.push_cmd Shutdown;
+      let%lwt _ = Lwt_mvar.put cancellation_semaphore () in
       return s)
     else (
       Logs.debug (fun m -> m "Shard %d OK to heartbeat. seq=%d" s.id (s.seq /// -1));
@@ -192,6 +187,5 @@ let try_heartbeat s =
   | None -> return s
 ;;
 
-let set_presence presence shard = shard.push_cmd (SetPresence presence)
+(*let set_presence presence shard = shard.push_cmd (SetPresence presence)*)
 let id s = s.id
-let cmds s = s.cmd

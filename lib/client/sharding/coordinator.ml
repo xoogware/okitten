@@ -1,12 +1,11 @@
 open Lwt
 open Utils
-open Commands.Coordinator
 
-type tracked_shard = int * (Commands.Shard.command -> unit) * bool
+type tracked_shard = int * (Runner_commands.t -> unit) * bool
 
 type t =
-  { cmd_stream : command Lwt_stream.t
-  ; push_cmd : command option -> unit
+  { cmd_stream : Coordinator_commands.t Lwt_stream.t
+  ; push_cmd : Coordinator_commands.t option -> unit
   ; last_identify : float option
   ; token : string
   ; intents : int
@@ -37,13 +36,11 @@ let spawn ~token ~intents ~shards ~shard_count ~ws_url ~with_presence ~push_to_c
           ~id:next_shard_id
           ~token
           ~intents
-          ~push_cmd:push
-          ~cmd:chan
           ~push_to_coordinator
           ~ws_url
           ~with_presence
       in
-      Lwt.async (fun () -> Runner.start shard);
+      Lwt.async (fun () -> Runner.start ~cmd_stream:chan shard);
       spawn' ((next_shard_id, push, false) :: spawned_shards) (cnt - 1) (next_shard_id + 1)
   in
   shards
@@ -54,7 +51,7 @@ let spawn ~token ~intents ~shards ~shard_count ~ws_url ~with_presence ~push_to_c
 ;;
 
 let run t =
-  let open Commands.Shard in
+  let open Runner_commands in
   let rec run' t =
     let t =
       (* check if 5 seconds have passed - okay to identify *)
