@@ -9,9 +9,10 @@ let setup_logs () =
 ;;
 
 let rec wait () = Lwt_unix.sleep 5. >>= fun _ -> wait ()
-let log_ready () = return @@ Logs.info (fun m -> m "Ready!")
+let log_ready () = return @@ Logs.info (fun m -> m "Ready! PID %d" (Unix.getpid ()))
 
-let log_message _ctx (msg : Okitten.Models.Message.t) =
+let log_message ctx (msg : Models.Message.t) =
+  let%lwt res = Models.Message.create ~channel_id:msg.channel_id ~content:"Hello!" ctx in
   return @@ Logs.info (fun m -> m "Got message: %s" msg.content)
 ;;
 
