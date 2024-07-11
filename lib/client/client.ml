@@ -22,7 +22,11 @@ module ClientBuilder = struct
   let build b =
     let http = Http.Builder.create ~token:b.token |> Http.Builder.build in
     let coordinator =
-      Coordinator.init ~token:b.token ~intents:b.intents ~event_handler:b.event_handler
+      Coordinator.init
+        ~http
+        ~token:b.token
+        ~intents:b.intents
+        ~event_handler:b.event_handler
     in
     let push_coordinator_cmd = Coordinator.run coordinator in
     return { http; push_coordinator_cmd; token = b.token; intents = b.intents }

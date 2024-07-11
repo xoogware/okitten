@@ -44,9 +44,7 @@ let fire request ~http =
 ;;
 
 let get_bot_gateway http =
-  let%lwt res =
-    Request.make ~route:"https://discord.com/api/v10/gateway/bot" ~meth:Get |> fire ~http
-  in
+  let%lwt res = Request.make ~route:"/gateway/bot" ~meth:Get |> fire ~http in
   let%lwt str_body = res |> snd |> Cohttp_lwt.Body.to_string in
   return (str_body |> Yojson.Safe.from_string |> Models.Gateway.bot_gateway_of_yojson)
 ;;

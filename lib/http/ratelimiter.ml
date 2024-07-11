@@ -118,7 +118,7 @@ let apply_postprocess ~headers ~resource rl =
 
 let rec watch_requests ratelimiter =
   let perform ~meth ~resource ~headers ~body self =
-    let uri = Uri.of_string resource in
+    let uri = Uri.of_string @@ "https://discord.com/api/v10" ^ resource in
     let body = Option.map (fun b -> Cohttp_lwt.Body.of_string b) body in
     let headers = headers /// Cohttp.Header.init () in
     let headers =
@@ -132,7 +132,6 @@ let rec watch_requests ratelimiter =
     let%lwt response, body = Cohttp_lwt_unix.Client.call ~headers ?body meth uri in
     return (response, body, self)
   in
-  Logs.info (fun m -> m "listening");
   match%lwt Lwt_stream.get ratelimiter.request_queue with
   | Some (r, response_channel) ->
     let%lwt ratelimiter = apply_preprocess ~req:r ratelimiter in
