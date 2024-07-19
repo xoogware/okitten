@@ -1,3 +1,5 @@
+open Ppx_yojson_conv_lib.Yojson_conv.Primitives
+
 type avatar_decoration_data =
   { asset : string
   ; sku_id : string

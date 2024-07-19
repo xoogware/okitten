@@ -1,3 +1,5 @@
+open Ppx_yojson_conv_lib.Yojson_conv.Primitives
+
 type session_start_limit =
   { total : int
   ; remaining : int

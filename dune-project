@@ -21,7 +21,7 @@
  (name okitten)
  (synopsis "A Discord API wrapper for OCaml")
  (description "OKitten is a Discord API wrapper for OCaml ^_^")
- (depends ocaml dune cohttp cohttp-lwt-unix conduit-lwt dune-build-info fmt ipaddr iso8601 lwt websocket logs uri yojson ppx_deriving ppx_yojson_conv)
+ (depends ocaml dune cohttp cohttp-lwt-unix conduit-lwt dune-build-info fmt ipaddr ISO8601 lwt lwt_ppx lwt_ssl websocket websocket-lwt-unix logs uri yojson ppx_deriving ppx_yojson_conv)
  (tags
   (discord bot)))
 

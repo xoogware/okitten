@@ -1,3 +1,5 @@
+open Ppx_yojson_conv_lib.Yojson_conv.Primitives
+
 module Activity = struct
   type activity_kind =
     | Game
