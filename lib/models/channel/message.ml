@@ -11,7 +11,7 @@ type t =
   ; tts : bool
   ; mention_everyone : bool
   ; mentions : User.t list
-  ; guild_id : string option
+  ; guild_id : string option [@yojson.option]
   }
 [@@deriving yojson] [@@yojson.allow_extra_fields]
 
