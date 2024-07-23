@@ -15,9 +15,9 @@ module Builder = struct
 
   let parse_token t =
     try
-      match String.sub t 0 4 with
-      | "Bot " -> t
-      | _ -> "Bot " ^ t
+      match String.contains t ' ' with
+      | true -> t
+      | false -> "Bot " ^ t
     with
     | _ -> t
   ;;
