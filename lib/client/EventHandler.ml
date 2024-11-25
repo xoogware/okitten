@@ -13,6 +13,16 @@ let init () = { on_ready = (fun () -> return ()); on_message = (fun _ _ -> retur
 let set_on_ready f handler = { handler with on_ready = f }
 let set_on_message f handler = { handler with on_message = f }
 
+let apply_opt opt f builder =
+  match opt with
+  | Some v -> f v builder
+  | None -> builder
+;;
+
+let init_with ?on_ready ?on_message () =
+  init () |> apply_opt on_ready set_on_ready |> apply_opt on_message set_on_message
+;;
+
 let handle_event handler http event =
   Lwt.async (fun () ->
     match event with

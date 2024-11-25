@@ -1,5 +1,5 @@
 open Lwt
-open Utils
+open Options
 
 type tracked_shard = int * (Runner_commands.t -> unit) * bool
 

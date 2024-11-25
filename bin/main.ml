@@ -12,8 +12,12 @@ let rec wait () = Lwt_unix.sleep 5. >>= fun _ -> wait ()
 let log_ready () = return @@ Logs.info (fun m -> m "Ready! PID %d" (Unix.getpid ()))
 
 let log_message ctx (msg : Models.Message.t) =
-  let%lwt res = Models.Message.create ~channel_id:msg.channel_id ~content:"Hello!" ctx in
-  return @@ Logs.info (fun m -> m "Got message: %s" msg.content)
+  Logs.info (fun m -> m "Got message: %s" msg.content);
+  match msg.content with
+  | "!ping" ->
+    let%lwt _ = Models.Message.reply ~original:msg ~content:"Pong!" ctx in
+    return ()
+  | _ -> return ()
 ;;
 
 let () =
@@ -36,7 +40,7 @@ let () =
         empty |> since_now |> with_activity activity |> set_status Idle |> set_afk false)
     in
     let event_handler =
-      EventHandler.(init () |> set_on_ready log_ready |> set_on_message log_message)
+      EventHandler.(init_with ~on_ready:log_ready ~on_message:log_message ())
     in
     let%lwt _ =
       ClientBuilder.(

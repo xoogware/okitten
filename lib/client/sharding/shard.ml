@@ -1,5 +1,5 @@
 open Lwt
-open Utils
+open Options
 open Ppx_yojson_conv_lib.Yojson_conv.Primitives
 
 type t =
@@ -8,12 +8,12 @@ type t =
   ; last_heartbeat_ack_at : float option
   ; last_heartbeat_was_acknowledged : bool
   ; heartbeat_interval : float option
-  ; on_get_appid : string -> unit
+  ; _on_get_appid : string -> unit
   ; seq : int option
-  ; session_id : string option
-  ; started_at : float
+  ; _session_id : string option
+  ; _started_at : float
   ; token : string
-  ; ws_url : string
+  ; _ws_url : string
   ; ws_conn : Websocket_lwt_unix.conn
   ; intents : int
   ; push_to_coordinator : Coordinator_commands.t option -> unit
@@ -38,12 +38,12 @@ let init ~id ~token ~intents ~push_to_coordinator ~ws_url ~with_presence =
     ; last_heartbeat_ack_at = None
     ; last_heartbeat_was_acknowledged = false
     ; heartbeat_interval = None
-    ; on_get_appid = (fun _ -> ())
+    ; _on_get_appid = (fun _ -> ())
     ; seq = None
-    ; session_id = None
-    ; started_at = 0.
+    ; _session_id = None
+    ; _started_at = 0.
     ; token
-    ; ws_url
+    ; _ws_url = ws_url
     ; ws_conn
     ; intents
     ; push_to_coordinator
