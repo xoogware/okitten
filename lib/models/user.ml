@@ -10,8 +10,8 @@ type t =
   { id : string
   ; username : string
   ; discriminator : string
-  ; global_name : string
-  ; avatar : string
+  ; global_name : string option
+  ; avatar : string option
   ; bot : bool option [@yojson.option]
   ; system : bool option [@yojson.option]
   ; mfa_enabled : bool option [@yojson.option]
